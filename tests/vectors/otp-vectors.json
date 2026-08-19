@@ -1,0 +1,32 @@
+{
+  "_comment": "Golden vectors. HMAC key is the ASCII hex characters of 'key', not the decoded bytes.",
+  "algorithm": {
+    "hash": "HMAC-SHA256",
+    "digits": 8,
+    "step_seconds": 90,
+    "truncation": "RFC 4226 dynamic truncation, offset = digest[31] & 0x0F"
+  },
+  "key": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+  "vectors": [
+    {
+      "counter": 0,
+      "code": "68057205"
+    },
+    {
+      "counter": 1,
+      "code": "51479266"
+    },
+    {
+      "counter": 42,
+      "code": "68546110"
+    },
+    {
+      "counter": 20000000,
+      "code": "59105726"
+    },
+    {
+      "counter": 20194884,
+      "code": "41961759"
+    }
+  ]
+}
