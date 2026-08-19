@@ -7,6 +7,13 @@ CXXFLAGS ?= -std=c++17 -Wall -Wextra -O2
 # macOS ships an ancient LibreSSL and no openssl headers; Homebrew's openssl@3
 # is keg-only, so it has to be pointed at explicitly. On Linux this resolves to
 # empty and the system paths are used.
+#
+# Portability caveat: Homebrew's libcrypto carries an absolute install name, so
+# these binaries hardcode /opt/homebrew/... and will not run on a machine
+# without that exact path. Check with `otool -L build/verifier`. There is no
+# flag that fixes this -- the Phase 10 container has to build its own binary
+# inside the image (or link libcrypto statically). Fine for local dev, not
+# something to ship.
 OPENSSL_PREFIX := $(shell brew --prefix openssl@3 2>/dev/null)
 ifneq ($(OPENSSL_PREFIX),)
 CPPFLAGS += -I$(OPENSSL_PREFIX)/include
@@ -14,6 +21,11 @@ LDFLAGS  += -L$(OPENSSL_PREFIX)/lib
 endif
 
 LDLIBS += -lcrypto -lsqlite3
+
+# Absolute fallback path to the keystore, so a dev build works from any working
+# directory instead of only from the repo root. $XAUTH_DB overrides it at run
+# time, which is how the container build is expected to point at its mount.
+CPPFLAGS += -DXAUTH_DB_DEFAULT='"$(abspath db/auth)"' 
 
 BUILD := build
 CORE  := core/otp.cpp core/keystore.cpp

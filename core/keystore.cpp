@@ -4,29 +4,35 @@
 #include <cstdlib>
 #include <iostream>
 
+#ifndef XAUTH_DB_DEFAULT
+#define XAUTH_DB_DEFAULT "db/auth"
+#endif
+
 std::string db_path() {
     const char* env = std::getenv("XAUTH_DB");
-    return env ? std::string(env) : std::string("db/auth");
+    if (env && *env) return std::string(env);
+    return std::string(XAUTH_DB_DEFAULT);
 }
 
-bool find_device(const std::string& id, Device& out) {
+Lookup find_device(const std::string& id, Device& out) {
     sqlite3* db = nullptr;
     // SQLITE_OPEN_READONLY: the verifier has no business writing to the
     // keystore, so don't hand it a writable handle it could be tricked into using.
     int rc = sqlite3_open_v2(db_path().c_str(), &db, SQLITE_OPEN_READONLY, nullptr);
     if (rc != SQLITE_OK) {
-        std::cerr << "Db not found or bad path" << std::endl << sqlite3_errmsg(db) << std::endl;
+        std::cerr << "keystore: cannot open " << db_path() << ": "
+                  << sqlite3_errmsg(db) << std::endl;
         sqlite3_close(db);
-        return false;   // the original fell through here and used a dead handle
+        return Lookup::Error;   // the original fell through here and used a dead handle
     }
 
     const char* sql = "SELECT Key, Status, Note FROM secure_key_data WHERE ID = ?";
     sqlite3_stmt* stmt = nullptr;
     rc = sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
     if (rc != SQLITE_OK) {
-        std::cerr << "Failed to prepare statement: " << sqlite3_errmsg(db) << std::endl;
+        std::cerr << "keystore: failed to prepare statement: " << sqlite3_errmsg(db) << std::endl;
         sqlite3_close(db);
-        return false;   // likewise -- this used to reach bind_text with stmt == nullptr
+        return Lookup::Error;   // likewise -- this used to reach bind_text with stmt == nullptr
     }
 
     // SQLITE_TRANSIENT: sqlite copies the text instead of holding a pointer into
@@ -49,14 +55,15 @@ bool find_device(const std::string& id, Device& out) {
 
     sqlite3_finalize(stmt);   // neither of these ran in the original
     sqlite3_close(db);
-    return found;
+    return found ? Lookup::Found : Lookup::NotFound;
 }
 
 bool add_device(const Device& device) {
     sqlite3* db = nullptr;
     int rc = sqlite3_open_v2(db_path().c_str(), &db, SQLITE_OPEN_READWRITE, nullptr);
     if (rc != SQLITE_OK) {
-        std::cerr << "Database not found or bad path" << std::endl << sqlite3_errmsg(db) << std::endl;
+        std::cerr << "keystore: cannot open " << db_path() << " for writing: "
+                  << sqlite3_errmsg(db) << std::endl;
         sqlite3_close(db);
         return false;
     }

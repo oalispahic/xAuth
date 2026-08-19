@@ -6,11 +6,20 @@
 #include <iostream>
 #include <string>
 
-// One-shot verifier: reads a device ID and a submitted code on stdin, exits 0
-// if the code is valid and 1 if it is not.
+// One-shot verifier: reads a device ID and a submitted code on stdin.
 //
-// Exit code is the contract -- callers must test for 0, not for a specific
-// nonzero value (a negative return is reported as 255 by POSIX wait()).
+//   exit 0  code is valid
+//   exit 1  code is not valid (wrong code, unknown device, revoked device)
+//   exit 2  the keystore could not be read at all -- an operator problem
+//
+// Exit code is the contract, and callers must test for 0 rather than for a
+// specific nonzero value (a negative return is reported as 255 by POSIX
+// wait()). Every nonzero code means "do not authenticate".
+//
+// The 2 exists so a misconfigured keystore is not silently indistinguishable
+// from a device holder typing the wrong digits. It is for logs and alerting
+// only -- whatever calls this must collapse 1 and 2 into one identical
+// user-facing rejection, or it becomes a probe for whether an ID exists.
 //
 // Phase 2 turns this into a long-running daemon on a Unix socket and adds the
 // counter -1/0/+1 drift window; see docs/development-plan.md.
@@ -54,7 +63,7 @@ int main() {
     std::string user_id = input_userID();
 
     Device device;
-    bool found = find_device(user_id, device);
+    Lookup lookup = find_device(user_id, device);
 
     std::string check_code;
     std::getline(std::cin, check_code);
@@ -69,7 +78,14 @@ int main() {
     // IDs exist. Closing that needs the dummy-key path from architecture.md §6
     // -- a real random key held by the verifier, HMAC'd against so the timing
     // matches. That lands with the daemon in Phase 2.
-    if (!found || device.status != 1) {
+    if (lookup == Lookup::Error) {
+        // Already reported on stderr by the keystore layer. Fail closed, but
+        // loudly enough that it is not mistaken for a routine bad code.
+        std::cout<<"Bad code!"<<std::endl;
+        return 2;
+    }
+
+    if (lookup != Lookup::Found || device.status != 1) {
         std::cout<<"Bad code!"<<std::endl;
         return 1;
     }
