@@ -1,12 +1,12 @@
 #include <Arduino.h>
 #include <time.h>
 #include <sys/time.h>
-#include <BearSSLHelpers.h>
+#include <mbedtls/md.h> // Zamjena za BearSSL (mbedTLS je integrisan u ESP32)
 #include "../include/securekey.hpp"
 
-#define LED1 D4
-#define LED2 D0
-
+// Na ESP32-C3 koristite direktne GPIO brojeve umjesto D0/D4 oznaka
+#define LED1 4  // Prilagodite GPIO broj vašoj ploči
+#define LED2 5  // Prilagodite GPIO broj vašoj ploči
 
 const char* secretKey = SECURE_KEY;
 
@@ -41,55 +41,70 @@ uint32_t totp(const char* key, time_t now, int step_seconds = 90, int digits = 8
     // Allocate 32 bytes for SHA256 output hash array
     uint8_t hmacResult[32];
 
-    // BearSSL Context Setup using raw C pointers
-    br_hmac_key_context kc;
-    br_hmac_key_init(&kc, &br_sha256_vtable, key, key_len);
+    // mbedTLS Context Setup za ESP32
+    mbedtls_md_context_t ctx;
+    mbedtls_md_init(&ctx);
     
-    br_hmac_context hc;
-    br_hmac_init(&hc, &kc, 0);
-    br_hmac_update(&hc, counter_bytes, 8); 
-    br_hmac_out(&hc, hmacResult);
+    // Inicijalizacija SHA256 strukture
+    mbedtls_md_setup(&ctx, mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), 1);
+    
+    // Pokretanje HMAC operacije sa ključem
+    mbedtls_md_hmac_starts(&ctx, (const unsigned char*)key, key_len);
+    mbedtls_md_hmac_update(&ctx, counter_bytes, 8);
+    mbedtls_md_hmac_finish(&ctx, hmacResult);
+    
+    // Čišćenje memorije konteksta
+    mbedtls_md_free(&ctx);
 
     return dynamic_truncate(hmacResult, digits);
 }
 
-void setTime(){
-time_t unixtimenow = COMPILER_UNIX_TIME;
+void setTime(){ 
+    // Napomena: COMPILER_UNIX_TIME mora biti definisan u platformio.ini kao build_flags
+    time_t unixtimenow = COMPILER_UNIX_TIME; 
 
-    // Inject directly into internal hardware clock
+    // Direktno ubacivanje u interni sat ESP32 hardvera
     struct timeval tv = { .tv_sec = unixtimenow, .tv_usec = 0 };
     settimeofday(&tv, nullptr);
 }
 
 void setup() {
-  Serial.begin(115200);
+    Serial.begin(115200);
 
-   while(Serial.available()) { Serial.read(); }
-   delay(3000);
-   Serial.println("Time syncing... Please wait for the READY signal from the computer.\n"); 
+    while(Serial.available()) { Serial.read(); }
+    delay(3000);
+    Serial.println("Time syncing... Please wait for the READY signal from the computer.\n"); 
 
-   setTime();
-   
+    setTime();
 }
 
-
 void loop() {
-
     time_t now = time(nullptr);
     uint32_t code = totp(secretKey, now);
 
-    int first_four = code / 10000;
-  int second_four = code % 10000;
+   /*/ int first_four = code / 10000;
+    int second_four = code % 10000;
   
-  Serial.print("Time: ");
-  Serial.print(now);
-  Serial.print(" | Code: ");
-  Serial.print(first_four);
-  Serial.print(" - ");
-  Serial.println(second_four);
+    Serial.print("Time: ");
+    Serial.print(now);
+    Serial.print(" | Code: ");
+    
+    // Dodano formatiranje sa vodećim nulama ako je kod manji od 4 cifre
+    if (first_four < 1000) Serial.print("0");
+    if (first_four < 100) Serial.print("0");
+    if (first_four < 10) Serial.print("0");
+    Serial.print(first_four);
+    
+    Serial.print(" - ");
+    
+    if (second_four < 1000) Serial.print("0");
+    if (second_four < 100) Serial.print("0");
+    if (second_four < 10) Serial.print("0");
+    Serial.println(second_four);
 
-  delay(5000);
-
+    delay(5000);*/
   
+    Serial.println("Time: ");
+    Serial.println(now);
+    delay(500);
 }
-
