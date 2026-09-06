@@ -6,20 +6,11 @@
 #include <iostream>
 #include <string>
 
-// One-shot verifier: reads a device ID and a submitted code on stdin.
+// One-shot verifier: reads a device ID and a submitted code on stdin, exits 0
+// if the code is valid and 1 if it is not.
 //
-//   exit 0  code is valid
-//   exit 1  code is not valid (wrong code, unknown device, revoked device)
-//   exit 2  the keystore could not be read at all -- an operator problem
-//
-// Exit code is the contract, and callers must test for 0 rather than for a
-// specific nonzero value (a negative return is reported as 255 by POSIX
-// wait()). Every nonzero code means "do not authenticate".
-//
-// The 2 exists so a misconfigured keystore is not silently indistinguishable
-// from a device holder typing the wrong digits. It is for logs and alerting
-// only -- whatever calls this must collapse 1 and 2 into one identical
-// user-facing rejection, or it becomes a probe for whether an ID exists.
+// Exit code is the contract -- callers must test for 0, not for a specific
+// nonzero value (a negative return is reported as 255 by POSIX wait()).
 //
 // Phase 2 turns this into a long-running daemon on a Unix socket and adds the
 // counter -1/0/+1 drift window; see docs/development-plan.md.
@@ -63,29 +54,34 @@ int main() {
     std::string user_id = input_userID();
 
     Device device;
-    Lookup lookup = find_device(user_id, device);
+    Lookup found = find_device(user_id, device);
+    if (found == Lookup::Error) {
+        // Error means the keystore itself could not be read -- not that the ID
+        // is missing. Different problem, different 3am page. Operator-only, so
+        // it goes to stderr and never changes what the caller sees.
+        std::cerr<<"keystore: lookup failed for id "<<user_id<<std::endl;
+        return 1;
+    }
 
     std::string check_code;
     std::getline(std::cin, check_code);
     clean_trash(check_code);
 
-    // Fail closed. The original left the key empty when the ID was unknown and
-    // computed a code from it anyway -- an empty HMAC key is not a secret, so
-    // anyone could compute the "valid" code for any ID that did not exist and
-    // authenticate as it. Unknown ID and revoked device are both hard failures.
+    // Fail closed. Unknown ID and revoked device are one branch on purpose:
+    // find_device() only writes to `device` on a hit, so a miss leaves the
+    // defaults in place -- key "" and status 1 -- which sails straight past a
+    // status-only check and gets HMAC'd with an empty key. An empty key is not
+    // a secret, so that path lets anyone compute the "valid" code for any ID
+    // that does not exist.
     //
-    // Note this returns faster than a real verification does, which leaks which
-    // IDs exist. Closing that needs the dummy-key path from architecture.md §6
-    // -- a real random key held by the verifier, HMAC'd against so the timing
-    // matches. That lands with the daemon in Phase 2.
-    if (lookup == Lookup::Error) {
-        // Already reported on stderr by the keystore layer. Fail closed, but
-        // loudly enough that it is not mistaken for a routine bad code.
-        std::cout<<"Bad code!"<<std::endl;
-        return 2;
-    }
-
-    if (lookup != Lookup::Found || device.status != 1) {
+    // One shared message, too: saying "revoked" out loud confirms the ID is
+    // real, which is the enumeration oracle architecture.md §6 rules out.
+    //
+    // Still imperfect -- this returns faster than a real verification does,
+    // which leaks which IDs exist by timing instead. Closing that needs the
+    // dummy-key path from §6: a real random key held by the verifier, HMAC'd
+    // against so the work matches. That lands with the daemon in Phase 2.
+    if (found != Lookup::Found || device.status != 1) {
         std::cout<<"Bad code!"<<std::endl;
         return 1;
     }
