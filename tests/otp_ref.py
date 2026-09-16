@@ -7,6 +7,8 @@ required by Phase 1 of docs/development-plan.md.
 Key handling note: the HMAC key is the ASCII hex *characters* stored in the
 keystore, not the bytes they decode to. The firmware does the same.
 """
+from __future__ import annotations  # `float | None` on Python < 3.10
+
 import hmac, hashlib, struct, time
 
 STEP = 90
