@@ -11,6 +11,9 @@
 
 CXX      ?= c++
 CXXFLAGS ?= -std=c++17 -Wall -Wextra -O2
+# The verifier serves each connection on its own thread.
+CXXFLAGS += -pthread
+LDFLAGS  += -pthread
 
 UNAME_S := $(shell uname -s)
 
@@ -61,7 +64,7 @@ BUILD := build
 CORE  := core/otp.cpp core/keystore.cpp
 HDRS  := core/otp.hpp core/keystore.hpp
 
-.PHONY: all clean db test deps
+.PHONY: all clean db test test-verifier devcode deps
 
 all: $(BUILD)/verifier $(BUILD)/provision
 
@@ -76,6 +79,12 @@ $(BUILD)/verifier: verifier/main.cpp $(CORE) $(HDRS) | $(BUILD)
 $(BUILD)/provision: tools/provision/main.cpp $(CORE) $(HDRS) | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(CPPFLAGS) $(filter %.cpp,$^) -o $@ $(LDFLAGS) $(LDLIBS)
 
+# DEV ONLY: prints a device's current code from the keystore. Deliberately not
+# in `all`, so it never ends up on the server by accident.
+devcode: $(BUILD)/devcode
+$(BUILD)/devcode: tools/devcode/main.cpp $(CORE) $(HDRS) | $(BUILD)
+	$(CXX) $(CXXFLAGS) $(CPPFLAGS) $(filter %.cpp,$^) -o $@ $(LDFLAGS) $(LDLIBS)
+
 $(BUILD)/otpgen: tests/gen_codes.cpp $(CORE) $(HDRS) | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(CPPFLAGS) $(filter %.cpp,$^) -o $@ $(LDFLAGS) $(LDLIBS)
 
@@ -83,6 +92,10 @@ $(BUILD)/otpgen: tests/gen_codes.cpp $(CORE) $(HDRS) | $(BUILD)
 # the golden vectors. The firmware's mbedTLS copy must match these too.
 test: $(BUILD)/otpgen
 	$(PYTHON) tests/check_vectors.py
+
+# Table-driven cases against a live verifier on a throwaway keystore.
+test-verifier: $(BUILD)/verifier $(BUILD)/provision
+	$(PYTHON) tests/verifier_cases.py
 
 # Create an empty keystore from the schema. Refuses to clobber an existing one --
 # the keystore is the one piece of state that cannot be regenerated.
