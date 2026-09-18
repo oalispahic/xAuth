@@ -405,7 +405,10 @@ def run(stack: bool) -> int:
             check("unauthenticated deep link redirects to login", r.status == 302 and loc.startswith(AUTH_ORIGIN + "/login"))
             check("deep link survives encoding intact", red == APP + target, red)
             check("app content never shown without a session", "Mock app" not in r.body)
-            check("session opens the gate", g(target, headers={"Cookie": cookie}).status == 200)
+            r = g(target, headers={"Cookie": cookie})
+            check("session opens the gate", r.status == 200)
+            check("gated responses must be revalidated (no cached page after sign-out)",
+                  (r.header("cache-control") or "") == "private, no-cache", r.header("cache-control") or "none")
             if token:
                 check("token opens the gate", g("/api/x", headers={"X-xAuth-Token": token}).status == 200)
                 echo = g("/_echo/token", headers={"X-xAuth-Token": token}).body.strip()

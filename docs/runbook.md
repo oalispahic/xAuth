@@ -100,6 +100,16 @@ $C run --rm provision add --label "new admin" --firmware-header ...   # as above
 $C up -d auth-web
 ```
 
+## Signed out, but the app still shows
+
+The same URL still shows the app after sign-out, while any other URL goes
+to login: the browser is replaying its own cached copy without asking nginx.
+The gate snippet sends `Cache-Control: private, no-cache` on gated responses
+to prevent exactly that -- so this means a `location` in that server has its
+own `add_header`, which (nginx rule) drops the inherited one. Repeat the
+`proxy_hide_header` / `add_header Cache-Control` pair from
+`nginx/xauth-gate.conf` in that location.
+
 ## Backups
 
 The keystore is the one thing that cannot be rebuilt. Redis can be lost:
