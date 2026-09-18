@@ -303,3 +303,17 @@ test('pages carry the security headers', async (t) => {
   assert.equal(res.headers.get('cache-control'), 'no-store');
   assert.equal(res.headers.get('x-powered-by'), null);
 });
+
+test('a store failure mid-request is an error response, never a crash', async (t) => {
+  const app = await withApp(t);
+  const boom = async () => { throw new Error('store down'); };
+  app.deps.limiter.allowIp = boom;
+  app.deps.sessions.get = boom;
+  app.deps.tokens.list = boom;
+
+  assert.equal((await app.login(GOOD)).status, 500);
+  assert.equal((await app.request('/login')).status, 500);
+  assert.equal((await app.request('/verify', { headers: { cookie: 'xauth_session=x' } })).status, 401);
+  // Still alive and serving.
+  assert.equal((await app.request('/healthz')).status, 200);
+});

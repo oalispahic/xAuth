@@ -31,11 +31,12 @@ function createRedisStores({ redisUrl, keyPrefix = 'xauth:', sessionTtlSeconds, 
   ipAttemptsPerMinute, tokenTtlSeconds, maxTokensPerDevice, now = () => Date.now(), client }) {
   const redis = client ?? new Redis(redisUrl, {
     keyPrefix,
-    // Fail fast instead of queueing requests while Redis is down: /verify
-    // turns the error into a 401, which is the safe answer.
-    enableOfflineQueue: false,
+    // Queue briefly while (re)connecting -- auth-web can start before Redis is
+    // ready -- but never hang: every command fails after a second, and /verify
+    // turns that into a 401, which is the safe answer.
+    enableOfflineQueue: true,
     maxRetriesPerRequest: 1,
-    lazyConnect: false,
+    commandTimeout: 1000,
   });
   redis.on('error', () => {});   // surfaced per call; don't crash the process
   redis.defineCommand('xauthIncr', { numberOfKeys: 1, lua: INCR_EXPIRE });

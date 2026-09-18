@@ -1,11 +1,12 @@
 const { readCookie } = require('../cookies');
+const { wrap } = require('../async');
 
 // nginx calls this on every request to every gated app, images included.
 // A session cookie (browsers) or a device token header (apps that cannot do
 // the redirect flow) gets 200, but only while the device is still active.
 // No verifier VERIFY call, no body, nothing logged on the happy path.
 module.exports = function verifyRoutes(app, { config, sessions, tokens, deviceStatus, log }) {
-  app.get('/verify', async (req, res) => {
+  app.get('/verify', wrap(async (req, res) => {
     res.set('Cache-Control', 'no-store');
     try {
       let deviceId = null;
@@ -30,5 +31,5 @@ module.exports = function verifyRoutes(app, { config, sessions, tokens, deviceSt
       log.error(`verify: ${err.message}`);
       res.status(401).end();
     }
-  });
+  }));
 };

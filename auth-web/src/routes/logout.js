@@ -1,4 +1,5 @@
 const { readCookie, cookieOptions } = require('../cookies');
+const { wrap } = require('../async');
 
 module.exports = function logoutRoutes(app, { config, sessions }) {
   // Gated apps may show their own logout button, so their origins are
@@ -10,7 +11,7 @@ module.exports = function logoutRoutes(app, { config, sessions }) {
     ...config.allowedHosts.flatMap((host) => schemes.map((s) => `${s}://${host}`)),
   ]);
 
-  app.post('/logout', async (req, res) => {
+  app.post('/logout', wrap(async (req, res) => {
     const origin = req.get('origin');
     if (!origin || !allowedOrigins.has(origin)) {
       return res.status(403).type('text').send('Forbidden');
@@ -19,5 +20,5 @@ module.exports = function logoutRoutes(app, { config, sessions }) {
     // Must match the options the cookie was set with, or the browser keeps it.
     res.clearCookie(config.cookieName, cookieOptions(config));
     res.redirect(303, '/login');
-  });
+  }));
 };

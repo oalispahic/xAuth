@@ -4,6 +4,7 @@
 const { render, escapeHtml } = require('../render');
 const { createSessionReader } = require('../session');
 const { normalizeLabel } = require('../tokens');
+const { wrap } = require('../async');
 
 function formatTime(ms) {
   return ms ? new Date(ms).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : 'never';
@@ -60,7 +61,7 @@ module.exports = function tokenRoutes(app, deps) {
     return session;
   }
 
-  app.post('/tokens', async (req, res) => {
+  app.post('/tokens', wrap(async (req, res) => {
     const session = await guard(req, res);
     if (!session) return;
     const label = normalizeLabel(req.body?.label);
@@ -79,9 +80,9 @@ module.exports = function tokenRoutes(app, deps) {
     // Rendered directly rather than redirected, so the token is never put in a
     // URL, a flash store or anywhere else it would outlive this response.
     res.type('html').send(await signedInPage(deps, session, { newToken: { token: created.token, label } }));
-  });
+  }));
 
-  app.post('/tokens/revoke', async (req, res) => {
+  app.post('/tokens/revoke', wrap(async (req, res) => {
     const session = await guard(req, res);
     if (!session) return;
     const id = String(req.body?.id ?? '');
@@ -89,7 +90,7 @@ module.exports = function tokenRoutes(app, deps) {
       log.info(`tokens: device ${session.deviceId} revoked token ${id}`);
     }
     res.redirect(303, '/login');
-  });
+  }));
 };
 
 module.exports.signedInPage = signedInPage;

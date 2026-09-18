@@ -1,8 +1,9 @@
 const { normalizeId, normalizeCode, isValidId, isValidCode } = require('../verifier');
 const { cookieOptions } = require('../cookies');
+const { wrap } = require('../async');
 
 module.exports = function otpRoutes(app, { config, sessions, limiter, redirects, verifier, alerter, log }) {
-  app.post('/otp', async (req, res) => {
+  app.post('/otp', wrap(async (req, res) => {
     // Login-CSRF defence: the form only ever posts from our own origin, and
     // every current browser sends Origin on a POST. A missing Origin is refused
     // too -- explicitly, not because undefined happens to differ.
@@ -60,5 +61,5 @@ module.exports = function otpRoutes(app, { config, sessions, limiter, redirects,
     });
     log.info(`otp: device ${deviceId} signed in`);
     res.redirect(303, target ?? '/login');
-  });
+  }));
 };

@@ -1,6 +1,7 @@
 const { render } = require('../render');
 const { createSessionReader } = require('../session');
 const { signedInPage } = require('./tokens');
+const { wrap } = require('../async');
 
 // One message for every failure. Anything more specific tells an attacker
 // which half of the guess was wrong.
@@ -29,6 +30,6 @@ module.exports = function loginRoutes(app, deps) {
     }));
   }
 
-  app.get('/', page);
-  app.get('/login', page);
+  app.get('/', wrap(page));
+  app.get('/login', wrap(page));
 };
