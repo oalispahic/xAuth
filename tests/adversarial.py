@@ -7,6 +7,7 @@ Starts its own verifier daemon (on a throwaway keystore -- db/auth is never
 touched) and its own auth-web, then attacks them:
 
   verifier   timing: unknown ID vs known ID with a wrong code
+  admin      non-admins and tokens kept out, CSRF, create/revoke round trip
   auth-web   brute force, IP budget, replay (sequential and concurrent),
              malformed and path-traversal IDs, cookie tampering, token
              tampering, CSRF, open redirects, header injection, oversize
@@ -172,6 +173,7 @@ def run(stack: bool) -> int:
 
     tmp = tempfile.mkdtemp(prefix="xauth-adv-")
     sock = os.path.join(tmp, "v.sock")
+    asock = os.path.join(tmp, "a.sock")
     env_db = {"PATH": os.environ.get("PATH", "")}
     if stack:
         db = os.path.join(os.environ["XAUTH_KEYSTORE_DIR"], "auth")
@@ -191,13 +193,14 @@ def run(stack: bool) -> int:
             return subprocess.run([os.path.join(BUILD, "provision"), *args], env=env_db,
                                   check=True, capture_output=True, text=True).stdout.strip()
 
-    devices = [provision("add", "--label", f"adv{i}") for i in range(6)]
+    devices = [provision("add", "--label", f"adv{i}") for i in range(7)]
     con = sqlite3.connect(db)
     keys = {d: con.execute("SELECT Key FROM secure_key_data WHERE ID=?", (d,)).fetchone()[0] for d in devices}
     code_now = lambda d, off=0: code_for_counter(keys[d], int(time.time()) // STEP + off)
     # One device per test: the budget is 2 attempts per device per window, so
     # sharing a device would let one test pass on another's spent budget.
-    brute, replay, race, older, revokee, spare = devices
+    brute, replay, race, older, revokee, spare, adm = devices
+    web_env_admin = {"ADMIN_DEVICES": adm}
 
     use_redis = stack or port_open(6379)
     web_env = {
@@ -205,12 +208,16 @@ def run(stack: bool) -> int:
         "HOST": "127.0.0.1", "PORT": str(PORT),
         "AUTH_ORIGIN": AUTH_ORIGIN, "ALLOWED_HOSTS": "app.xauth.test:8080",
         "ALLOW_HTTP_REDIRECTS": "true", "COOKIE_DOMAIN": "xauth.test", "COOKIE_SECURE": "false",
-        "VERIFIER_SOCKET": sock, "STATUS_CACHE_SECONDS": "1", "IP_ATTEMPTS_PER_MINUTE": "20",
+        "VERIFIER_SOCKET": sock, "ADMIN_SOCKET": asock, "ADMIN_DEVICES": "",
+        "STATUS_CACHE_SECONDS": "1", "IP_ATTEMPTS_PER_MINUTE": "20",
         **({"REDIS_URL": "redis://127.0.0.1:6379"} if use_redis else {}),
+        **web_env_admin,
     }
     procs = []
     if not stack:
         procs.append(subprocess.Popen([os.path.join(BUILD, "verifier"), "--socket", sock], env=env_db,
+                                      stderr=subprocess.DEVNULL))
+        procs.append(subprocess.Popen([os.path.join(BUILD, "xauth-admin"), "--socket", asock], env=env_db,
                                       stderr=subprocess.DEVNULL))
         procs.append(subprocess.Popen(["node", "src/server.js"], cwd=os.path.join(ROOT, "auth-web"),
                                       env=web_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
@@ -352,7 +359,40 @@ def run(stack: bool) -> int:
         fresh_window()
         check("revoked device: its right code is refused", session_of(login(revokee, code_now(revokee))) is None)
 
-        # -- 8. through nginx -------------------------------------------------------------
+        # -- 8. admin dashboard ------------------------------------------------------------
+        section("Admin dashboard")
+        if stack:
+            print("  [SKIP] ADMIN_DEVICES is fixed by the stack's env file")
+        else:
+            non_admin = cookie   # `replay` device's session from above
+            check("non-admin session gets 404, not the page", req("GET", "/admin", headers={"Cookie": non_admin}).status == 404)
+            check("no session is sent to login", req("GET", "/admin").status == 303)
+            r = req("POST", "/admin/devices", headers={"Cookie": non_admin, "Origin": AUTH_ORIGIN}, body={"label": "x"})
+            check("non-admin cannot create devices", r.status == 404)
+            fresh_window()
+            acookie = session_of(login(adm, code_now(adm)))
+            check("admin session sees the dashboard", acookie is not None and req("GET", "/admin", headers={"Cookie": acookie}).status == 200)
+            if token:
+                check("token cannot reach /admin", req("GET", "/admin", headers={"X-xAuth-Token": token}).status == 303)
+            for origin in (None, "https://evil.example"):
+                h = {"Cookie": acookie, **({"Origin": origin} if origin else {})}
+                check(f"admin POST with Origin={origin} refused",
+                      req("POST", "/admin/devices/revoke", headers=h, body={"id": spare}).status == 403)
+            r = req("POST", "/admin/devices", headers={"Cookie": acookie, "Origin": AUTH_ORIGIN}, body={"label": "from dashboard"})
+            m = re.search(r"#define DEVICE_ID  &quot;([0-9A-Z]{4})&quot;", r.body)
+            check("admin creates a device and sees the header once", r.status == 200 and m is not None)
+            if m:
+                newdev = m.group(1)
+                again = req("GET", "/admin", headers={"Cookie": acookie}).body
+                check("key is not shown again", "SECURE_KEY" not in again and newdev in again)
+                r = req("POST", "/admin/devices/revoke", headers={"Cookie": acookie, "Origin": AUTH_ORIGIN}, body={"id": newdev})
+                check("admin revokes it", r.status == 200 and ask_socket(sock, f"STATUS {newdev}\n") == "INACTIVE")
+            r = req("POST", "/admin/devices/revoke", headers={"Cookie": acookie, "Origin": AUTH_ORIGIN}, body={"id": adm})
+            check("last admin cannot revoke itself", r.status == 409)
+            r = req("POST", "/admin/devices", headers={"Cookie": acookie, "Origin": AUTH_ORIGIN}, body={"label": 'a"; DROP TABLE x; --'})
+            check("hostile label refused", r.status == 400)
+
+        # -- 9. through nginx -------------------------------------------------------------
         section("Through the nginx gate (dev harness)")
         if not port_open(8080):
             print("  [SKIP] harness not running: docker compose -f dev/docker-compose.yml up -d")

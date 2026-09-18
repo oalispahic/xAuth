@@ -11,10 +11,11 @@ WORKDIR /src
 COPY Makefile ./
 COPY core core
 COPY verifier verifier
+COPY admin admin
 COPY tools/provision tools/provision
 COPY db/schema.sql db/schema.sql
 # The baked-in default keystore path is the build dir; $XAUTH_DB overrides it.
-RUN make build/verifier build/provision
+RUN make build/verifier build/provision build/xauth-admin
 
 # Everything the runtime needs that distroless/cc lacks: sqlite, and the
 # socket directory, owned by the verifier with group access for auth-web.
@@ -23,7 +24,7 @@ RUN set -eu; \
     arch="$(gcc -print-multiarch)"; \
     mkdir -p "/out/usr/lib/$arch" /out/usr/local/bin /out/run/xauth; \
     cp -L "/usr/lib/$arch/libsqlite3.so.0" "/out/usr/lib/$arch/"; \
-    cp build/verifier build/provision /out/usr/local/bin/; \
+    cp build/verifier build/provision build/xauth-admin /out/usr/local/bin/; \
     chown 10001:10000 /out/run/xauth; chmod 0750 /out/run/xauth
 
 FROM gcr.io/distroless/cc-debian12:nonroot

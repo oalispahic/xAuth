@@ -47,7 +47,7 @@ services:
       context: ..
       dockerfile: deploy/auth-web.Dockerfile
     image: xauth-web
-    depends_on: [verifier, redis]
+    depends_on: [verifier, admin, redis]
     pids_limit: 128
     mem_limit: 256m
     env_file: ${XAUTH_ENV_FILE:-xauth.env}
@@ -55,6 +55,7 @@ services:
       HOST: 0.0.0.0
       PORT: "3100"
       VERIFIER_SOCKET: /run/xauth/verifier.sock
+      ADMIN_SOCKET: /run/xauth/admin.sock
       REDIS_URL: redis://:${XAUTH_REDIS_PASSWORD:?set XAUTH_REDIS_PASSWORD}@redis:6379
       # Docker's port publishing hands connections over from a private bridge
       # address, so that is the proxy to trust -- not loopback. Only nginx on
@@ -68,7 +69,22 @@ services:
       # Loopback only. nginx on the host is the one thing that talks to it.
       - "127.0.0.1:3100:3100"
 
-  # Keystore administration, never running:
+  # The admin daemon: the only runtime writer of the keystore, reachable only
+  # through its socket, only by auth-web's uid. No network.
+  admin:
+    <<: *hardening
+    image: xauth-verifier
+    depends_on: [verifier]
+    network_mode: none
+    pids_limit: 32
+    mem_limit: 64m
+    entrypoint: ["/usr/local/bin/xauth-admin"]
+    command: ["--socket", "/run/xauth/admin.sock", "--allow-uid", "10002"]
+    volumes:
+      - ${XAUTH_KEYSTORE_DIR:?set XAUTH_KEYSTORE_DIR}:/keystore
+      - xauth-sock:/run/xauth
+
+  # Keystore administration from the shell, never running:
   #   docker compose -f deploy/docker-compose.yml run --rm provision add --label phone
   #   docker compose -f deploy/docker-compose.yml run --rm provision revoke ABCD
   provision:
