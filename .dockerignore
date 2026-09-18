@@ -1,0 +1,11 @@
+# Nothing secret or bulky goes into a build context.
+.git
+build
+db/auth
+db/*.db
+**/node_modules
+firmware
+docs
+deploy/xauth.env
+**/securekey.hpp
+**/.DS_Store

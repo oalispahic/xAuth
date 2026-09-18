@@ -22,6 +22,13 @@ uint32_t totp(const char* key,
 // out, so nothing else in the firmware ever holds a pointer to it.
 uint32_t otp_now(time_t now);
 
+// This device's public ID, from the same provisioning run as its key
+// (`provision add --firmware-header include/securekey.hpp`).
+const char* device_id();
+
+// Seconds left before the code changes.
+uint32_t otp_seconds_left(uint32_t now);
+
 // Zero-pads to OTP_DIGITS and NUL-terminates. `out` must hold OTP_DIGITS + 1
 // bytes. A code with leading zeros is still an 8-digit code; printing the
 // uint32_t directly drops them and the server rejects what you typed.

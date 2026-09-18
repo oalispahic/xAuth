@@ -1,0 +1,127 @@
+# xAuth production stack: verifier, auth-web, Redis. nginx stays on the host
+# (or wherever your apps' nginx already runs) and reaches auth-web on
+# 127.0.0.1:3100. See deploy/README.md.
+#
+#   docker compose -f deploy/docker-compose.yml --env-file deploy/xauth.env up -d --build
+#
+# uids: verifier 10001, auth-web 10002, shared group 10000 for the socket.
+
+name: xauth
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+  ulimits:
+    core: 0
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "5" }
+
+services:
+  verifier:
+    <<: *hardening
+    build:
+      context: ..
+      dockerfile: deploy/verifier.Dockerfile
+    image: xauth-verifier
+    # It only ever talks over a Unix socket. No network, not even loopback.
+    network_mode: none
+    pids_limit: 64
+    mem_limit: 64m
+    security_opt:
+      - no-new-privileges:true
+      # Built from the verifier's real syscalls; see deploy/seccomp/.
+      # Comment out to fall back to Docker's default profile.
+      - seccomp=./seccomp/verifier.json
+    volumes:
+      # The keystore, read-only. Host side: owned by 10001, mode 0600.
+      - ${XAUTH_KEYSTORE_DIR:?set XAUTH_KEYSTORE_DIR}:/keystore:ro
+      - xauth-sock:/run/xauth
+
+  auth-web:
+    <<: *hardening
+    build:
+      context: ..
+      dockerfile: deploy/auth-web.Dockerfile
+    image: xauth-web
+    depends_on: [verifier, admin, redis]
+    pids_limit: 128
+    mem_limit: 256m
+    env_file: ${XAUTH_ENV_FILE:-xauth.env}
+    environment:
+      HOST: 0.0.0.0
+      PORT: "3100"
+      VERIFIER_SOCKET: /run/xauth/verifier.sock
+      ADMIN_SOCKET: /run/xauth/admin.sock
+      REDIS_URL: redis://:${XAUTH_REDIS_PASSWORD:?set XAUTH_REDIS_PASSWORD}@redis:6379
+      # Docker's port publishing hands connections over from a private bridge
+      # address, so that is the proxy to trust -- not loopback. Only nginx on
+      # the host can reach the published port, and auth-web is the only
+      # container on the edge network.
+      TRUST_PROXY: ${XAUTH_TRUST_PROXY:-uniquelocal}
+    volumes:
+      - xauth-sock:/run/xauth
+    networks: [internal, edge]
+    ports:
+      # Loopback only. nginx on the host is the one thing that talks to it.
+      - "127.0.0.1:3100:3100"
+
+  # The admin daemon: the only runtime writer of the keystore, reachable only
+  # through its socket, only by auth-web's uid. No network.
+  admin:
+    <<: *hardening
+    image: xauth-verifier
+    depends_on: [verifier]
+    network_mode: none
+    pids_limit: 32
+    mem_limit: 64m
+    entrypoint: ["/usr/local/bin/xauth-admin"]
+    command: ["--socket", "/run/xauth/admin.sock", "--allow-uid", "10002"]
+    volumes:
+      - ${XAUTH_KEYSTORE_DIR:?set XAUTH_KEYSTORE_DIR}:/keystore
+      - xauth-sock:/run/xauth
+
+  # Keystore administration from the shell, never running:
+  #   docker compose -f deploy/docker-compose.yml run --rm provision add --label phone
+  #   docker compose -f deploy/docker-compose.yml run --rm provision revoke ABCD
+  provision:
+    <<: *hardening
+    image: xauth-verifier
+    profiles: [admin]
+    restart: "no"
+    network_mode: none
+    entrypoint: ["/usr/local/bin/provision"]
+    volumes:
+      - ${XAUTH_KEYSTORE_DIR:?set XAUTH_KEYSTORE_DIR}:/keystore
+
+  redis:
+    <<: *hardening
+    image: redis:7-alpine
+    # Run as the image's redis user directly; the entrypoint's privilege drop
+    # would need capabilities we don't grant.
+    user: "999:999"
+    # A password even on the internal network: protected mode refuses remote
+    # clients without one, and it keeps any other container that ever lands on
+    # this network out of the session store.
+    command: ["redis-server", "--requirepass", "${XAUTH_REDIS_PASSWORD:?set XAUTH_REDIS_PASSWORD}",
+              "--appendonly", "yes", "--save", "", "--protected-mode", "yes",
+              "--rename-command", "FLUSHALL", "", "--rename-command", "FLUSHDB", "",
+              "--rename-command", "CONFIG", "", "--rename-command", "DEBUG", ""]
+    pids_limit: 64
+    mem_limit: 128m
+    volumes:
+      - xauth-redis:/data
+    networks: [internal]
+
+networks:
+  # No route out. Redis is reachable from auth-web and nothing else.
+  internal:
+    internal: true
+  edge: {}
+
+volumes:
+  xauth-sock:
+  xauth-redis:

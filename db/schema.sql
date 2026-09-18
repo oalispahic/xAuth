@@ -15,7 +15,7 @@ PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS secure_key_data (
     -- Public device ID, printed on the physical keychain. Crockford Base32,
-    -- currently 4 chars (see tools/provision). Not a secret.
+    -- 4-8 chars; new devices get 4 (see tools/provision). Not a secret.
     ID     TEXT    NOT NULL PRIMARY KEY,
 
     -- Per-device HMAC-SHA256 secret, 128 lowercase hex chars.
@@ -30,11 +30,12 @@ CREATE TABLE IF NOT EXISTS secure_key_data (
 
     -- Admin-facing label ("Omar's primary", "lost 07/26"). Never shown on the
     -- login surface -- it must not become a way to correlate an ID to a person.
-    Note   TEXT    NOT NULL DEFAULT 'OK'
+    Note   TEXT    NOT NULL DEFAULT 'OK',
 
-    -- Deferred: a Created timestamp is specified in docs/architecture.md §7 but
-    -- is not written by the provisioning tool yet. Add together, not separately.
-    -- , Created TEXT NOT NULL DEFAULT (datetime('now'))
+    -- When the device was provisioned, UTC. Nullable only because keystores
+    -- created before this column existed get it added by `provision` with
+    -- ALTER TABLE, which cannot backfill a non-constant default.
+    Created TEXT            DEFAULT (datetime('now'))
 );
 
 -- Revocation checks and any future "list active devices" admin view scan on

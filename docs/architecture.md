@@ -94,7 +94,7 @@ Hardening for this container specifically, since it's the one thing worth actual
 
 ## 6. Device identity
 
-Each physical keychain gets a short, auto-generated public ID — not user-chosen. Recommended format: 6–8 characters of Crockford Base32 (excludes ambiguous `0/O`, `1/I/L`), printed on the device at provisioning time (e.g. `KX7Q AB`).
+Each physical keychain gets a short, auto-generated public ID — not user-chosen. Format: Crockford Base32 (excludes ambiguous `O`, `I`, `L`, `U`), 4–8 characters. New devices get 4 (e.g. `KJTJ`); validation accepts up to 8 so IDs can be lengthened later without a migration. Printed on the device at provisioning time and shown on its screen.
 
 Treat the ID as public, like a username, not as a secret. Its value isn't hiding-in-plain-sight obscurity — it's that pairing ID + code decouples brute-force odds from fleet size. Without an ID, an attacker's odds of a random hit scale with the number of active devices (any of N keys matching). With an ID, they have to land the right key *and* the right code together, so odds stay flat at 1/10⁸ regardless of whether you have 5 keychains or 500.
 
@@ -105,41 +105,55 @@ Two rules to avoid turning the ID into a side channel:
 
 ## 7. Keystore and revocation
 
-```
-/keystore/devices/
-    KX7QAB.json   { "secret": "<raw bytes, base64>", "active": true,  "label": "primary",  "created": "..." }
-    9F2MRT.json   { "secret": "<raw bytes, base64>", "active": false, "label": "lost 07/26","created": "..." }
-```
+A single SQLite file (`db/schema.sql`), one row per device: public ID, the
+128-hex-character key, a status flag, an admin-only label, a created
+timestamp.
 
-- Directory owned by the `otp-verifier` uid, `0400` on each file. `auth-web` cannot read it — it doesn't need to.
-- Revocation = flip `active` to `false` (or delete the file). No rebuild, no redeploy, takes effect on the next lookup.
-- One secret per device, generated with a CSPRNG at provisioning, never derived from anything guessable (not from the device ID, not sequential).
-- Explicitly **not** baked into a compiled binary. A secret embedded in `.rodata` is a `strings` pass away regardless of how the binary is invoked — file permissions plus uid separation plus the container boundary in §5 is the actual protection, not compiler tricks. It also would have blocked per-device revocation entirely.
+- Owned by the verifier's uid (10001), `0600`, mounted **read-only** into the
+  verifier container, which opens it `SQLITE_OPEN_READONLY`. `auth-web`
+  cannot read it and never needs to.
+- The provisioning tool (`tools/provision`) is the only writer, run on demand
+  through the admin-only `provision` compose service.
+- Revocation = `provision revoke ID` (Status 0). No rebuild, no redeploy. It
+  takes effect on the verifier's next lookup, and `auth-web` asks the
+  verifier about the device of every session and token (cached a few
+  seconds), so live sessions and tokens die with it.
+- One secret per device, from a CSPRNG (`RAND_bytes`), never derived from
+  anything guessable.
+- Never baked into a server binary. It is baked into the keychain firmware,
+  unavoidably, from a header written in the same provisioning run as the
+  keystore row.
 
 ## 8. OTP algorithm parameters
 
 - HMAC-SHA256, RFC 4226 dynamic truncation.
 - **8 digits**, not 6 — the single biggest lever against brute force (10⁸ vs 10⁶ space) for negligible UX cost.
 - 90-second step.
-- Verifier checks counter−1, counter, counter+1 to tolerate clock drift/latency.
-- Attempt budget: 2 attempts per `(device_id, counter_window)`, enforced via an atomic Redis `INCR` with a TTL slightly longer than the step — read-then-write would allow a race that grants more than 2 attempts under concurrent requests.
+- Verifier checks counter−1, counter, counter+1 to tolerate clock drift/latency, and reports which one matched.
+- Replay: `auth-web` claims the matched counter, and a claim only succeeds if it is newer than the device's last successful one. A code works once, and an older code cannot follow a newer one.
+- Attempt budget: 2 attempts per `(device_id, counter_window)`, enforced by a Redis Lua script (`INCR` + first-use `EXPIRE`) — read-then-write would allow a race that grants more than 2 attempts under concurrent requests.
 
 At 8 digits with a hard 2-attempt cap, a patient attacker's cumulative odds over a full year of continuous guessing land around 10⁻⁵ — this is comfortably fine without needing escalating lockouts on top, though logging repeated failures per device ID is still worth it as a "device may be lost/targeted" signal, not as the primary defense.
 
 ## 9. Multi-app integration
 
-Two ways to slot this in front of existing apps; pick based on how invasive you want the change to existing infra to be.
+**Decided: Option B, the shared snippet.** Each app keeps its own nginx and
+adds `include xauth-gate.conf;` (`nginx/xauth-gate.conf`). No DNS or
+entry-point changes. `auth-web` is published on `127.0.0.1:3100` for the
+host's nginx; the verifier has no network at all and is reachable only
+through its Unix socket; Redis sits on an internal network with no route out.
 
-**Option A — single edge entry point.** `edge-nginx` becomes the actual internet-facing listener for `*.example.com`; it terminates TLS, does the `auth_request` check, then reverse-proxies to each app's existing nginx. Requires repointing DNS/entry point but centralizes everything.
-
-**Option B — shared snippet (recommended for minimal disruption).** Each app keeps its own nginx exactly as it is today, and just adds an `include auth-gate.conf;` snippet containing the `auth_request /verify;` directive pointing at `auth-web` over the internal Docker network. No DNS or entry-point changes, no re-architecting existing per-app nginx configs — you're only adding one subrequest.
-
-Either way, `auth-web`, `otp-verifier`, and Redis live in their own Docker Compose stack, reachable from app-side nginxes only over an internal network, with `otp-verifier` reachable from nothing but `auth-web`.
+Non-browser clients (the Immich mobile app, Postman) pass the gate with a
+per-device token in the `X-xAuth-Token` header, created from a browser
+session and killed with the device. See `docs/integrations.md`.
 
 ## 10. Deferred / open
 
-- `/otp-recovery` — not designed yet.
-- Device provisioning/enrollment flow (how a new key gets written to the keystore and etched onto the physical device simultaneously without crossing an insecure channel) — needs its own write-up.
-- Availability: `auth-web` / `otp-verifier` / Redis are a single point of failure for every gated app. Fine for a personal/small-team deployment; worth revisiting if this fronts anything with uptime requirements.
-- Option A vs. B for integration — leaning B, not finalized.
-- Exact seccomp syscall allowlist for `otp-verifier` — needs to be built from strace output of the real binary, not guessed.
+- Availability: `auth-web` / verifier / Redis are a single point of failure
+  for every gated app, and fail closed. Fine for a personal deployment.
+- Recovery is operational, not a feature: a second provisioned keychain, and
+  SSH to the server as the root of trust (`docs/runbook.md`). There is
+  deliberately no recovery path on the login page.
+- A PIN on the keychain (a second factor on the device itself) — not built.
+- The committed seccomp profile is an arm64 trace; regenerate on the deploy
+  architecture (`deploy/seccomp/generate.sh`).
