@@ -61,12 +61,12 @@ CPPFLAGS += -DXAUTH_DB_DEFAULT='"$(abspath db/auth)"'
 PYTHON ?= python3
 
 BUILD := build
-CORE  := core/otp.cpp core/keystore.cpp
-HDRS  := core/otp.hpp core/keystore.hpp
+CORE  := core/otp.cpp core/keystore.cpp core/keygen.cpp
+HDRS  := core/otp.hpp core/keystore.hpp core/keygen.hpp
 
-.PHONY: all clean db test test-verifier adversarial devcode run-verifier deps
+.PHONY: all clean db test test-verifier test-admin adversarial devcode run-verifier run-admin dev deps
 
-all: $(BUILD)/verifier $(BUILD)/provision
+all: $(BUILD)/verifier $(BUILD)/provision $(BUILD)/xauth-admin
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -74,6 +74,9 @@ $(BUILD):
 # Headers are listed as prerequisites so editing one triggers a rebuild, but
 # filtered out of the compile line.
 $(BUILD)/verifier: verifier/main.cpp $(CORE) $(HDRS) | $(BUILD)
+	$(CXX) $(CXXFLAGS) $(CPPFLAGS) $(filter %.cpp,$^) -o $@ $(LDFLAGS) $(LDLIBS)
+
+$(BUILD)/xauth-admin: admin/main.cpp $(CORE) $(HDRS) | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(CPPFLAGS) $(filter %.cpp,$^) -o $@ $(LDFLAGS) $(LDLIBS)
 
 $(BUILD)/provision: tools/provision/main.cpp $(CORE) $(HDRS) | $(BUILD)
@@ -97,6 +100,9 @@ test: $(BUILD)/otpgen
 test-verifier: $(BUILD)/verifier $(BUILD)/provision
 	$(PYTHON) tests/verifier_cases.py
 
+test-admin: $(BUILD)/xauth-admin $(BUILD)/provision
+	$(PYTHON) tests/admin_cases.py
+
 # Attacks a throwaway verifier + auth-web, and the nginx harness if it is up.
 # Re-run after any change to verifier/, core/, auth-web/ or nginx/.
 adversarial: $(BUILD)/verifier $(BUILD)/provision
@@ -106,6 +112,13 @@ adversarial: $(BUILD)/verifier $(BUILD)/provision
 # finds the socket at build/verifier.sock by default.
 run-verifier: $(BUILD)/verifier
 	$(BUILD)/verifier --socket $(BUILD)/verifier.sock
+
+run-admin: $(BUILD)/xauth-admin
+	$(BUILD)/xauth-admin --socket $(BUILD)/admin.sock
+
+# Everything for the local harness in one terminal: see dev/up.sh.
+dev: all devcode
+	dev/up.sh
 
 # Create an empty keystore from the schema. Refuses to clobber an existing one --
 # the keystore is the one piece of state that cannot be regenerated.
