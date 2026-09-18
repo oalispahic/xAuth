@@ -26,6 +26,9 @@ static const unsigned long MAX_EPOCH = 4102444800UL;
 static RTC_DS3231  rtc;
 static Preferences prefs;
 static ClockState  state = ClockState::NoRtc;
+// The high-water mark, mirrored in RAM: clock_now() runs many times a second
+// and must not hit NVS each time.
+static uint32_t    last_seen = 0;
 
 static ClockState evaluate() {
     if (!rtc.begin())    return ClockState::NoRtc;
@@ -33,13 +36,14 @@ static ClockState evaluate() {
     if (!prefs.getBool("provisioned", false)) return ClockState::NeverSet;
 
     uint32_t now = rtc.now().unixtime();
-    if (now < BUILD_EPOCH)                   return ClockState::Stopped;
-    if (now < prefs.getUInt("last_seen", 0)) return ClockState::WentBackwards;
+    if (now < BUILD_EPOCH) return ClockState::Stopped;
+    if (now < last_seen)   return ClockState::WentBackwards;
     return ClockState::Ok;
 }
 
 ClockState clock_begin() {
     prefs.begin("xauth", false);
+    last_seen = prefs.getUInt("last_seen", 0);
     state = evaluate();
     if (state != ClockState::NoRtc) {
         // Not needed, and the square wave costs battery.
@@ -73,9 +77,13 @@ static const char* state_name(ClockState s) {
     return "?";
 }
 
+static void set_high_water(uint32_t t) {
+    last_seen = t;
+    prefs.putUInt("last_seen", t);
+}
+
 static void remember_time(uint32_t now) {
-    uint32_t last = prefs.getUInt("last_seen", 0);
-    if (now > last + HIGH_WATER_INTERVAL) prefs.putUInt("last_seen", now);
+    if (now > last_seen + HIGH_WATER_INTERVAL) set_high_water(now);
 }
 
 uint32_t clock_now() {
@@ -83,7 +91,7 @@ uint32_t clock_now() {
     if (state == ClockState::Ok) {
         // Checked on every read, not just at boot: a clock that jumps
         // backwards while running is as untrustworthy as one that booted wrong.
-        if (now < prefs.getUInt("last_seen", 0)) {
+        if (now < last_seen) {
             state = ClockState::WentBackwards;
         } else {
             remember_time(now);
@@ -101,12 +109,19 @@ static bool apply_time(uint32_t epoch) {
         if (delta < -MAX_NUDGE_SECONDS || delta > MAX_NUDGE_SECONDS) return false;
     }
 
+    // The high-water mark never moves back by more than a nudge, whatever
+    // state the clock is in. Otherwise: pull the battery (OSF set, clock
+    // untrusted), set the clock a week ahead, read a week of codes, pull the
+    // battery again and set it back -- and nothing would show. With this rule
+    // the device stays a week ahead, every login fails, and the owner finds
+    // out. Resetting a genuinely wrong mark is a deliberate act:
+    // `pio run -t erase` wipes NVS.
+    if ((int64_t)epoch < (int64_t)last_seen - MAX_NUDGE_SECONDS) return false;
+
     // Explicit uint32_t: a bare integer can pick DateTime's y/m/d constructor.
     rtc.adjust(DateTime((uint32_t)epoch));    // also clears OSF
     prefs.putBool("provisioned", true);
-    // Set the high-water mark to the new time even if it is lower than the old
-    // one -- a deliberate, bounded correction is allowed to move it back.
-    prefs.putUInt("last_seen", epoch);
+    if (epoch > last_seen) set_high_water(epoch);
     state = evaluate();
     return state == ClockState::Ok;
 }
