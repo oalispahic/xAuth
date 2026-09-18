@@ -63,7 +63,9 @@ def main() -> int:
     con.commit()
     active_key, revoked_key = key_of(active), key_of(revoked)
 
-    proc = subprocess.Popen([VERIFIER, "--socket", sock], env=env,
+    # --allow-uid as in production (deploy/docker-compose.yml), so the peer
+    # check runs on every case -- and so the seccomp trace sees its syscalls.
+    proc = subprocess.Popen([VERIFIER, "--socket", sock, "--allow-uid", str(os.getuid())], env=env,
                             stderr=subprocess.PIPE, text=True)
     try:
         for _ in range(100):
@@ -130,6 +132,27 @@ def main() -> int:
         ok = mode == 0o660
         failed += not ok
         print(f"  [{'PASS' if ok else 'FAIL'}] {'socket mode 0660':38} got={oct(mode)}")
+
+        # A second daemon that only accepts some other uid must refuse us,
+        # even with a right code.
+        sock2 = os.path.join(tmp, "v2.sock")
+        other = subprocess.Popen([VERIFIER, "--socket", sock2, "--allow-uid", str(os.getuid() + 1)],
+                                 env=env, stderr=subprocess.DEVNULL)
+        try:
+            for _ in range(100):
+                if os.path.exists(sock2):
+                    break
+                time.sleep(0.02)
+            try:
+                got = ask(sock2, V(active, code_for_counter(active_key, int(time.time()) // STEP))).strip()
+            except OSError:
+                got = ""
+            ok = not got.startswith("OK")
+            failed += not ok
+            print(f"  [{'PASS' if ok else 'FAIL'}] {'disallowed uid refused':38} got={got!r}")
+        finally:
+            other.terminate()
+            other.wait(timeout=5)
 
         print("\nALL PASS" if not failed else f"\n{failed} FAILED")
         return 1 if failed else 0

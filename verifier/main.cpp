@@ -228,6 +228,19 @@ void serve(int fd, long allow_uid) {
         write_all(fd, "ERR\n");
     }
     if (!line.empty()) OPENSSL_cleanse(&line[0], line.size());
+
+    // On Linux, closing a Unix socket with unread input resets the connection,
+    // and the peer can lose the reply we just wrote (an over-long request would
+    // see ECONNRESET instead of ERR). Signal end-of-reply, then drain a bounded
+    // amount; the read timeout above caps how long a client can hold us here.
+    shutdown(fd, SHUT_WR);
+    char sink[512];
+    size_t drained = 0;
+    ssize_t r;
+    while (drained < 4096 && ((r = read(fd, sink, sizeof sink)) > 0 || (r < 0 && errno == EINTR))) {
+        if (r > 0) drained += r;
+    }
+    OPENSSL_cleanse(sink, sizeof sink);
     close(fd);
     in_flight--;
 }
