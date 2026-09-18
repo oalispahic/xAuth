@@ -10,9 +10,19 @@
 <body>
   <main class="card">
     <h1>Signed in</h1>
-    <p class="hint">This browser is signed in with device <strong>{{device}}</strong>.</p>
+    <p class="hint">This browser is signed in with device <strong>{{device}}</strong> until {{expires}}.</p>
+    {{{notice}}}
+    {{{newToken}}}
+    <h2>App tokens</h2>
+    <p class="hint">For apps that can't open this page, like the Immich mobile app. Each one works until you revoke it or the device is revoked. At most {{maxTokens}}.</p>
+    <ul class="tokens">{{{tokens}}}
+    </ul>
+    <form method="post" action="/tokens" class="inline-form">
+      <input name="label" required maxlength="40" placeholder="Name, e.g. Immich on phone" aria-label="Token name">
+      <button type="submit">Create token</button>
+    </form>
     <form method="post" action="/logout">
-      <button type="submit">Sign out</button>
+      <button type="submit" class="button-quiet">Sign out</button>
     </form>
   </main>
 </body>

@@ -1,9 +1,7 @@
-const path = require('node:path');
 const { createApp } = require('../src/server');
-const { createLimiter } = require('../src/rateLimit');
-const { createVerifier } = require('../src/verifier');
+const { createMemoryStores } = require('../src/stores/memory');
+const { isValidId, isValidCode } = require('../src/verifier');
 
-const FAKE_VERIFIER = path.join(__dirname, 'fake-verifier.sh');
 const AUTH = 'https://auth.example.test';
 const APP = 'https://app.example.test';
 
@@ -15,9 +13,10 @@ function testConfig(overrides = {}) {
     port: 0,
     trustProxy: 'loopback',
     authOrigin: AUTH,
-    verifierBin: FAKE_VERIFIER,
-    verifierDb: '/fake/keystore',
+    verifierSocket: '/nonexistent/verifier.sock',
     verifierTimeoutMs: 2000,
+    statusCacheSeconds: 0,
+    redisUrl: '',
     cookieName: 'xauth_session',
     cookieDomain: '.example.test',
     cookieSecure: true,
@@ -25,6 +24,11 @@ function testConfig(overrides = {}) {
     allowedHosts: ['app.example.test'],
     allowHttpRedirects: false,
     defaultRedirect: '',
+    tokenHeader: 'x-xauth-token',
+    tokenTtlSeconds: 86400,
+    maxTokensPerDevice: 3,
+    alertWebhookUrl: '',
+    alertFailuresPerHour: 6,
     otpStepSeconds: 90,
     attemptsPerWindow: 2,
     ipAttemptsPerMinute: 100,
@@ -32,23 +36,41 @@ function testConfig(overrides = {}) {
   };
 }
 
+// In-process stand-in for the verifier daemon. Device TEST is active and its
+// only valid code is 12345678, matching in whatever window the clock is in.
+// `statuses` can revoke devices mid-test.
+function fakeVerifier({ now, stepSeconds, statuses }) {
+  return {
+    calls: 0,
+    async verify(id, code) {
+      this.calls++;
+      if (!isValidId(id) || !isValidCode(code)) return { ok: false };
+      if (id !== 'TEST' || code !== '12345678' || statuses.TEST !== 'active') return { ok: false };
+      return { ok: true, counter: Math.floor(now() / 1000 / stepSeconds) };
+    },
+    async status(id) {
+      return statuses[id] ?? 'inactive';
+    },
+  };
+}
+
 // Starts a real server on a random port. `clock.now` can be moved to cross
 // OTP windows without waiting.
-async function startApp(configOverrides = {}, { clock } = {}) {
+async function startApp(configOverrides = {}, { clock, log = quietLog, alerter } = {}) {
   const config = testConfig(configOverrides);
-  const limiter = createLimiter({
+  const now = clock ? () => clock.now : () => Date.now();
+  const statuses = { TEST: 'active' };
+  const stores = createMemoryStores({
+    sessionTtlSeconds: config.sessionTtlSeconds,
     stepSeconds: config.otpStepSeconds,
     attemptsPerWindow: config.attemptsPerWindow,
     ipAttemptsPerMinute: config.ipAttemptsPerMinute,
-    ...(clock ? { now: () => clock.now } : {}),
+    tokenTtlSeconds: config.tokenTtlSeconds,
+    maxTokensPerDevice: config.maxTokensPerDevice,
+    ...(clock ? { now } : {}),
   });
-  const checkCode = createVerifier({
-    bin: config.verifierBin,
-    dbPath: config.verifierDb,
-    timeoutMs: config.verifierTimeoutMs,
-    log: quietLog,
-  });
-  const app = createApp(config, { log: quietLog, limiter, checkCode });
+  const verifier = fakeVerifier({ now, stepSeconds: config.otpStepSeconds, statuses });
+  const app = createApp(config, { log, stores, verifier, ...(alerter ? { alerter } : {}) });
   const server = await new Promise((resolve) => {
     const s = app.listen(0, '127.0.0.1', () => resolve(s));
   });
@@ -57,10 +79,11 @@ async function startApp(configOverrides = {}, { clock } = {}) {
   return {
     base,
     config,
+    statuses,
+    verifier,
     deps: app.locals.deps,
     async close() {
-      app.locals.deps.sessions.close();
-      limiter.close();
+      await app.locals.close();
       await new Promise((resolve) => server.close(resolve));
     },
     request(pathname, { method = 'GET', headers = {}, form } = {}) {
@@ -74,6 +97,13 @@ async function startApp(configOverrides = {}, { clock } = {}) {
     login(form, headers = {}) {
       return this.request('/otp', { method: 'POST', form, headers: { origin: AUTH, ...headers } });
     },
+    // Signs in and creates a device token. Returns { cookie, token }.
+    async tokenFor(label = 'Phone') {
+      const cookie = sessionCookie(await this.login({ device_id: 'TEST', code: '12345678' }));
+      const res = await this.request('/tokens', { method: 'POST', form: { label }, headers: { cookie, origin: AUTH } });
+      const token = /value="(xat_[^"]+)"/.exec(await res.text())?.[1] ?? null;
+      return { cookie, token };
+    },
   };
 }
 
@@ -83,4 +113,4 @@ function sessionCookie(res) {
   return line ? line.split(';')[0] : null;
 }
 
-module.exports = { startApp, sessionCookie, quietLog, FAKE_VERIFIER, AUTH, APP };
+module.exports = { startApp, sessionCookie, quietLog, testConfig, AUTH, APP };

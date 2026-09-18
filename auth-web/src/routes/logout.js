@@ -11,7 +11,8 @@ module.exports = function logoutRoutes(app, { config, sessions }) {
   ]);
 
   app.post('/logout', async (req, res) => {
-    if (!allowedOrigins.has(req.get('origin'))) {
+    const origin = req.get('origin');
+    if (!origin || !allowedOrigins.has(origin)) {
       return res.status(403).type('text').send('Forbidden');
     }
     await sessions.destroy(readCookie(req.headers.cookie, config.cookieName));

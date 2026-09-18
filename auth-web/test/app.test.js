@@ -240,10 +240,66 @@ test('a broken session store locks everyone out instead of letting them in', asy
   assert.equal(res.status, 401);
 });
 
+test('an unreachable verifier locks live sessions out', async (t) => {
+  const app = await withApp(t);
+  const cookie = sessionCookie(await app.login(GOOD));
+  app.statuses.TEST = 'error';
+  assert.equal((await app.request('/verify', { headers: { cookie } })).status, 401);
+});
+
+test('revoking a device ends its live sessions at once', async (t) => {
+  const app = await withApp(t);
+  const cookie = sessionCookie(await app.login(GOOD));
+  assert.equal((await app.request('/verify', { headers: { cookie } })).status, 200);
+
+  app.statuses.TEST = 'inactive';
+  assert.equal((await app.request('/verify', { headers: { cookie } })).status, 401);
+  const page = await (await app.request('/login', { headers: { cookie } })).text();
+  assert.match(page, /name="device_id"/, 'the auth site treats it as signed out too');
+});
+
+test('device status is cached for STATUS_CACHE_SECONDS, not longer', async (t) => {
+  const app = await withApp(t, { statusCacheSeconds: 1 });
+  const cookie = sessionCookie(await app.login(GOOD));
+  assert.equal((await app.request('/verify', { headers: { cookie } })).status, 200);
+  app.statuses.TEST = 'inactive';
+  assert.equal((await app.request('/verify', { headers: { cookie } })).status, 200, 'still cached');
+  await new Promise((r) => setTimeout(r, 1100));
+  assert.equal((await app.request('/verify', { headers: { cookie } })).status, 401);
+});
+
+test('a tampered session cookie is rejected', async (t) => {
+  const app = await withApp(t);
+  const cookie = sessionCookie(await app.login(GOOD));
+  const [name, value] = cookie.split('=');
+  for (const bad of [
+    value.slice(0, -1) + (value.endsWith('A') ? 'B' : 'A'),
+    value.slice(1),
+    value + 'A',
+    '',
+    'A'.repeat(500),
+  ]) {
+    assert.equal((await app.request('/verify', { headers: { cookie: `${name}=${bad}` } })).status, 401, bad);
+  }
+});
+
+test('a code from the previous window cannot be used after a newer one', async (t) => {
+  const clock = { now: Date.UTC(2026, 0, 1, 0, 0, 0) };
+  const app = await withApp(t, { attemptsPerWindow: 10 }, { clock });
+  // The verifier accepts adjacent windows; the claim must still only move forward.
+  const { limiter } = app.deps;
+  const w = limiter.windowNow();
+  assert.equal(await limiter.claim('TEST', w + 1), true);
+  assert.equal(await limiter.claim('TEST', w), false);
+  assert.equal(await limiter.claim('TEST', w + 1), false);
+  assert.equal(await limiter.claim('TEST', w + 2), true);
+});
+
 test('pages carry the security headers', async (t) => {
   const app = await withApp(t);
   const res = await app.request('/login');
   assert.match(res.headers.get('content-security-policy'), /frame-ancestors 'none'/);
+  assert.doesNotMatch(res.headers.get('content-security-policy'), /unsafe-inline/);
   assert.equal(res.headers.get('cache-control'), 'no-store');
   assert.equal(res.headers.get('x-powered-by'), null);
 });

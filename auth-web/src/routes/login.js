@@ -1,22 +1,26 @@
 const { render } = require('../render');
-const { readCookie } = require('../cookies');
+const { createSessionReader } = require('../session');
+const { signedInPage } = require('./tokens');
 
 // One message for every failure. Anything more specific tells an attacker
 // which half of the guess was wrong.
 const ERROR_HTML = '<p class="error" role="alert">Invalid device ID or code.</p>';
 
-module.exports = function loginRoutes(app, { config, sessions, redirects }) {
+module.exports = function loginRoutes(app, deps) {
+  const { redirects } = deps;
+  const currentSession = createSessionReader(deps);
+
   async function page(req, res) {
     const target = redirects.resolve(req.query.redirect);
-    const session = await sessions.get(readCookie(req.headers.cookie, config.cookieName));
+    const session = await currentSession(req);
 
     if (session) {
       // Already signed in: go straight to the app, but only when a target was
       // actually asked for. A bare visit shows the signed-in page, which is
-      // the only place to sign out from; the default target would hide it.
+      // where device tokens and sign-out live; the default target would hide it.
       const explicit = redirects.check(req.query.redirect);
       if (explicit) return res.redirect(302, explicit);
-      return res.type('html').send(render('signed-in', { device: session.deviceId }));
+      return res.type('html').send(await signedInPage(deps, session));
     }
 
     res.type('html').send(render('login', {

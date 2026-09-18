@@ -1,11 +1,13 @@
 const { normalizeId, normalizeCode, isValidId, isValidCode } = require('../verifier');
 const { cookieOptions } = require('../cookies');
 
-module.exports = function otpRoutes(app, { config, sessions, limiter, redirects, checkCode, log }) {
+module.exports = function otpRoutes(app, { config, sessions, limiter, redirects, verifier, alerter, log }) {
   app.post('/otp', async (req, res) => {
-    // Cheap login-CSRF defence: the form only ever posts from our own origin,
-    // and every current browser sends Origin on a cross-site POST.
-    if (req.get('origin') !== config.authOrigin) {
+    // Login-CSRF defence: the form only ever posts from our own origin, and
+    // every current browser sends Origin on a POST. A missing Origin is refused
+    // too -- explicitly, not because undefined happens to differ.
+    const origin = req.get('origin');
+    if (!origin || origin !== config.authOrigin) {
       return res.status(403).type('text').send('Forbidden');
     }
 
@@ -17,7 +19,7 @@ module.exports = function otpRoutes(app, { config, sessions, limiter, redirects,
     };
 
     // Counted first, so malformed input still costs the sender an attempt.
-    if (!limiter.allowIp(req.ip)) {
+    if (!(await limiter.allowIp(req.ip))) {
       log.warn(`otp: ip budget exhausted for ${req.ip}`);
       return fail();
     }
@@ -27,27 +29,29 @@ module.exports = function otpRoutes(app, { config, sessions, limiter, redirects,
     if (!isValidId(deviceId) || !isValidCode(code)) return fail();
 
     // Counted for every well-formed ID, real or not, so the budget says
-    // nothing about which IDs exist. Check and increment are one sync step.
-    const windowAtStart = limiter.windowNow();
-    if (!limiter.allowDevice(deviceId, windowAtStart)) {
+    // nothing about which IDs exist. The store's check-and-increment is one
+    // atomic step.
+    if (!(await limiter.allowDevice(deviceId, limiter.windowNow()))) {
       log.warn(`otp: attempt budget exhausted for ${deviceId}`);
+      alerter.alert('budget-exhausted', deviceId);
       return fail();
     }
 
-    // A code that already logged someone in must not work twice. The verifier
-    // still runs, so a replayed ID takes as long as any other attempt.
-    const replayed = limiter.isUsed(deviceId, windowAtStart);
+    const result = await verifier.verify(deviceId, code);
+    if (!result.ok) {
+      log.info(`otp: device ${deviceId} rejected`);
+      alerter.failure(deviceId);
+      return fail();
+    }
 
-    const ok = await checkCode(deviceId, code);
-    if (!ok || replayed) return fail();
-
-    // Re-check and claim in one sync step: two requests with the same code can
-    // both pass the check above while the verifier runs. The verifier may also
-    // have run in the next window, so claim that one too.
-    const windowNow = limiter.windowNow();
-    if (limiter.isUsed(deviceId, windowAtStart) || limiter.isUsed(deviceId, windowNow)) return fail();
-    limiter.markUsed(deviceId, windowAtStart);
-    limiter.markUsed(deviceId, windowNow);
+    // Claim the window the code actually matched (which may be the previous
+    // or next one), and refuse anything not newer than the last login. A code
+    // therefore works once, and an older code cannot follow a newer one.
+    if (!(await limiter.claim(deviceId, result.counter))) {
+      log.warn(`otp: device ${deviceId} replayed a used code`);
+      alerter.failure(deviceId);
+      return fail();
+    }
 
     const token = await sessions.create(deviceId);
     res.cookie(config.cookieName, token, {
