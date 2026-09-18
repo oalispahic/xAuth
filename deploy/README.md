@@ -1,6 +1,6 @@
 # Deployment
 
-Three containers: the verifier, auth-web and Redis. nginx is not in here: it
+Four containers: the verifier, the admin daemon, auth-web and Redis. nginx is not in here: it
 stays wherever your apps' nginx already runs, includes
 `nginx/xauth-gate.conf` in each gated app, and serves the auth site from
 `nginx/auth-site.conf.example`. It reaches auth-web on `127.0.0.1:3100`.
@@ -8,6 +8,7 @@ stays wherever your apps' nginx already runs, includes
 | Container | Runs as | Network | Filesystem |
 |---|---|---|---|
 | verifier | 10001:10000, distroless | **none** | read-only root, keystore mounted read-only, socket volume |
+| admin | 10001:10000, distroless | **none** | read-only root, keystore mounted read-write, socket volume |
 | auth-web | 10002:10000, distroless | internal + edge, port on 127.0.0.1 only | read-only root, socket volume |
 | redis | 999 | internal only (no route out) | read-only root, data volume |
 
@@ -18,6 +19,19 @@ from a trace of its real syscalls (`seccomp/verifier.json`). The socket
 uid 10002.
 
 ## First install
+
+The short way:
+
+```sh
+sudo deploy/setup.sh
+```
+
+It does everything below, asks only for the login host, the domain and the
+hosts to gate, provisions the first (admin) keychain, and lists what else on
+the server could be gated (`tools/discover.py`). Re-running it is safe: it
+never overwrites `xauth.env` or the keystore.
+
+The long way, step by step:
 
 ```sh
 # 1. Keystore, owned by the verifier's uid. Never in git, never in an image.
