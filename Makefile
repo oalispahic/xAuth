@@ -64,7 +64,7 @@ BUILD := build
 CORE  := core/otp.cpp core/keystore.cpp
 HDRS  := core/otp.hpp core/keystore.hpp
 
-.PHONY: all clean db test test-verifier devcode deps
+.PHONY: all clean db test test-verifier adversarial devcode run-verifier deps
 
 all: $(BUILD)/verifier $(BUILD)/provision
 
@@ -96,6 +96,16 @@ test: $(BUILD)/otpgen
 # Table-driven cases against a live verifier on a throwaway keystore.
 test-verifier: $(BUILD)/verifier $(BUILD)/provision
 	$(PYTHON) tests/verifier_cases.py
+
+# Attacks a throwaway verifier + auth-web, and the nginx harness if it is up.
+# Re-run after any change to verifier/, core/, auth-web/ or nginx/.
+adversarial: $(BUILD)/verifier $(BUILD)/provision
+	$(PYTHON) tests/adversarial.py
+
+# Run the verifier daemon against db/auth for the local harness. auth-web
+# finds the socket at build/verifier.sock by default.
+run-verifier: $(BUILD)/verifier
+	$(BUILD)/verifier --socket $(BUILD)/verifier.sock
 
 # Create an empty keystore from the schema. Refuses to clobber an existing one --
 # the keystore is the one piece of state that cannot be regenerated.

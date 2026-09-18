@@ -1,4 +1,5 @@
-# Local gate harness: nginx with a gated mock app. auth-web runs on the host.
+# Local gate harness: nginx with a gated mock app, and Redis. auth-web and the
+# verifier run on the host.
 # See dev/README.md.
 name: xauth-dev
 
@@ -14,3 +15,9 @@ services:
     extra_hosts:
       # Built into Docker Desktop; this line makes it work on Linux too.
       - "host.docker.internal:host-gateway"
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--save", ""]
+    ports:
+      - "127.0.0.1:6379:6379"
