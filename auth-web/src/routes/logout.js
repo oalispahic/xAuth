@@ -19,6 +19,6 @@ module.exports = function logoutRoutes(app, { config, sessions }) {
     await sessions.destroy(readCookie(req.headers.cookie, config.cookieName));
     // Must match the options the cookie was set with, or the browser keeps it.
     res.clearCookie(config.cookieName, cookieOptions(config));
-    res.redirect(303, '/login');
+    res.redirect(303, '/login?signed_out=1');
   }));
 };

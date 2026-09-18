@@ -18,17 +18,20 @@ async function signedInPage({ tokens, config }, session, { newToken, notice } = 
             <span class="token-label">${escapeHtml(t.label)}</span>
             <span class="token-meta">Created ${escapeHtml(formatTime(t.createdAt))} · last used ${escapeHtml(formatTime(t.lastUsedAt))}</span>
           </div>
-          <form method="post" action="/tokens/revoke">
+          <form method="post" action="/tokens/revoke" data-confirm="Revoke “${escapeHtml(t.label)}”? Apps using it stop working at once.">
             <input type="hidden" name="id" value="${escapeHtml(t.id)}">
-            <button type="submit" class="button-quiet">Revoke</button>
+            <button type="submit" class="button button-quiet button-small">Revoke</button>
           </form>
         </li>`).join('');
 
   const created = newToken ? `
       <div class="new-token" role="status">
-        <p><strong>${escapeHtml(newToken.label)}</strong> — copy this now, it will not be shown again.</p>
-        <input class="token-value" readonly value="${escapeHtml(newToken.token)}" aria-label="New device token">
-        <p class="hint">Send it on every request in the <code>${escapeHtml(config.tokenHeader)}</code> header.</p>
+        <p><strong>${escapeHtml(newToken.label)}</strong> is ready. Copy it now — it won't be shown again.</p>
+        <div class="new-token-row">
+          <input class="token-value" readonly value="${escapeHtml(newToken.token)}" aria-label="New app token">
+          <button type="button" class="button button-small" data-copy hidden>Copy</button>
+        </div>
+        <p class="hint">Header name: <code>${escapeHtml(config.tokenHeader)}</code></p>
       </div>` : '';
 
   return render('signed-in', {

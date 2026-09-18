@@ -6,6 +6,7 @@ const { wrap } = require('../async');
 // One message for every failure. Anything more specific tells an attacker
 // which half of the guess was wrong.
 const ERROR_HTML = '<p class="error" role="alert">Invalid device ID or code.</p>';
+const SIGNED_OUT_HTML = '<p class="notice" role="status">You are signed out.</p>';
 
 module.exports = function loginRoutes(app, deps) {
   const { redirects } = deps;
@@ -27,6 +28,7 @@ module.exports = function loginRoutes(app, deps) {
     res.type('html').send(render('login', {
       redirect: target ?? '',
       error: req.query.error ? ERROR_HTML : '',
+      notice: !req.query.error && req.query.signed_out ? SIGNED_OUT_HTML : '',
     }));
   }
 

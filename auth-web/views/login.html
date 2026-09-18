@@ -4,26 +4,42 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
-  <title>Sign in</title>
+  <meta name="color-scheme" content="light dark">
+  <title>Sign in · xAuth</title>
   <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
 </head>
 <body>
-  <main class="card">
-    <h1>Sign in</h1>
-    <p class="hint">Enter the ID printed on your keychain and the code it shows.</p>
-    {{{error}}}
-    <form method="post" action="/otp" autocomplete="off">
-      <input type="hidden" name="redirect" value="{{redirect}}">
-      <label>
-        Device ID
-        <input name="device_id" required maxlength="16" autocapitalize="characters" spellcheck="false" autofocus>
-      </label>
-      <label>
-        Code
-        <input name="code" required maxlength="16" inputmode="numeric" autocomplete="one-time-code">
-      </label>
-      <button type="submit">Continue</button>
-    </form>
+  <main class="shell">
+    <header class="brand">
+      <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 4.5 5.4v5.9c0 4.6 3.1 8.6 7.5 10.2 4.4-1.6 7.5-5.6 7.5-10.2V5.4L12 2.5Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="10.5" r="2.1" fill="currentColor"/><path d="M12 12.4v3.6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      <span class="brand-name">xAuth</span>
+    </header>
+
+    <section class="card">
+      <h1>Sign in</h1>
+      <p class="lede">Enter the ID printed on your keychain and the code on its screen.</p>
+      {{{error}}}{{{notice}}}
+      <form method="post" action="/otp" class="stack" data-once>
+        <input type="hidden" name="redirect" value="{{redirect}}">
+        <div class="field">
+          <label for="device_id">Device ID</label>
+          <input id="device_id" name="device_id" class="mono mono-id" required maxlength="16"
+                 autocomplete="username" autocapitalize="characters" spellcheck="false"
+                 placeholder="ABCD" autofocus>
+        </div>
+        <div class="field">
+          <label for="code">Code</label>
+          <input id="code" name="code" class="mono mono-code" required maxlength="16"
+                 inputmode="numeric" autocomplete="one-time-code" spellcheck="false"
+                 placeholder="0000 0000" data-code>
+          <p class="help">A new code every 90 seconds. Two tries per code.</p>
+        </div>
+        <button type="submit" class="button" data-busy-label="Checking…">Continue</button>
+      </form>
+    </section>
+
+    <footer class="foot">Every app behind this page is private.</footer>
   </main>
 </body>
 </html>

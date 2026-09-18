@@ -4,26 +4,40 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
-  <title>Signed in</title>
+  <meta name="color-scheme" content="light dark">
+  <title>Signed in · xAuth</title>
   <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
 </head>
 <body>
-  <main class="card">
-    <h1>Signed in</h1>
-    <p class="hint">This browser is signed in with device <strong>{{device}}</strong> until {{expires}}.</p>
-    {{{notice}}}
-    {{{newToken}}}
-    <h2>App tokens</h2>
-    <p class="hint">For apps that can't open this page, like the Immich mobile app. Each one works until you revoke it or the device is revoked. At most {{maxTokens}}.</p>
-    <ul class="tokens">{{{tokens}}}
-    </ul>
-    <form method="post" action="/tokens" class="inline-form">
-      <input name="label" required maxlength="40" placeholder="Name, e.g. Immich on phone" aria-label="Token name">
-      <button type="submit">Create token</button>
-    </form>
-    <form method="post" action="/logout">
-      <button type="submit" class="button-quiet">Sign out</button>
-    </form>
+  <main class="shell shell-wide">
+    <header class="brand">
+      <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 4.5 5.4v5.9c0 4.6 3.1 8.6 7.5 10.2 4.4-1.6 7.5-5.6 7.5-10.2V5.4L12 2.5Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="10.5" r="2.1" fill="currentColor"/><path d="M12 12.4v3.6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      <span class="brand-name">xAuth</span>
+    </header>
+
+    <section class="card">
+      <h1 class="status"><span class="status-dot" aria-hidden="true"></span>Signed in</h1>
+      <p class="lede">Device <span class="chip">{{device}}</span> · until {{expires}}</p>
+      <p class="hint">Your gated apps open in this browser without asking again.</p>
+      <form method="post" action="/logout">
+        <button type="submit" class="button button-quiet">Sign out</button>
+      </form>
+    </section>
+
+    <section class="card" aria-labelledby="tokens-title">
+      <h2 id="tokens-title">App tokens</h2>
+      <p class="hint">For apps that can't show this page, like the Immich mobile app or Postman. The app sends the token in the <code>{{tokenHeader}}</code> header. A token stops working when you revoke it or this device is revoked. Up to {{maxTokens}}.</p>
+      {{{notice}}}
+      {{{newToken}}}
+      <ul class="tokens">{{{tokens}}}
+      </ul>
+      <form method="post" action="/tokens" class="inline-form" data-once>
+        <label for="token-label" class="visually-hidden">Token name</label>
+        <input id="token-label" name="label" required maxlength="40" placeholder="Name, e.g. Immich on phone" autocomplete="off">
+        <button type="submit" class="button" data-busy-label="Creating…">Create token</button>
+      </form>
+    </section>
   </main>
 </body>
 </html>
