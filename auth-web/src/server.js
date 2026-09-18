@@ -52,7 +52,11 @@ function createApp(config, overrides = {}) {
       // POST, which would block the jump back to the app.
       'Content-Security-Policy': "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'",
       'X-Content-Type-Options': 'nosniff',
-      'Referrer-Policy': 'no-referrer',
+      // Not no-referrer: under that policy Chrome sends `Origin: null` on the
+      // login form's POST, and the Origin check then refuses every real
+      // browser. same-origin still sends nothing to the gated apps or anywhere
+      // else cross-origin, so the redirect target never leaks.
+      'Referrer-Policy': 'same-origin',
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
       'Cache-Control': 'no-store',

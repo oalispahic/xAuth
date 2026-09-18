@@ -300,6 +300,9 @@ test('pages carry the security headers', async (t) => {
   const res = await app.request('/login');
   assert.match(res.headers.get('content-security-policy'), /frame-ancestors 'none'/);
   assert.doesNotMatch(res.headers.get('content-security-policy'), /unsafe-inline/);
+  // no-referrer makes Chrome send `Origin: null` on the form POST, which the
+  // Origin check (rightly) refuses: no browser could sign in.
+  assert.equal(res.headers.get('referrer-policy'), 'same-origin');
   assert.equal(res.headers.get('cache-control'), 'no-store');
   assert.equal(res.headers.get('x-powered-by'), null);
 });
