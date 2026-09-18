@@ -35,6 +35,8 @@ async function signedInPage({ tokens, config }, session, { newToken, notice } = 
       </div>` : '';
 
   return render('signed-in', {
+    nav: config.adminDevices.includes(session.deviceId)
+      ? '<nav class="nav"><a href="/login" aria-current="page">Session</a><a href="/admin">Devices</a></nav>' : '',
     device: session.deviceId,
     expires: formatTime(session.expiresAt),
     tokenHeader: config.tokenHeader,

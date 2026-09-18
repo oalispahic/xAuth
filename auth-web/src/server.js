@@ -3,6 +3,7 @@ const express = require('express');
 
 const { load } = require('./config');
 const { createVerifier, createStatusChecker } = require('./verifier');
+const { createAdminClient } = require('./admin');
 const { createStores } = require('./stores');
 const { createRedirectPolicy } = require('./redirect');
 const { createAlerter } = require('./alerts');
@@ -20,10 +21,16 @@ function createApp(config, overrides = {}) {
     webhookUrl: config.alertWebhookUrl,
     failuresPerHour: config.alertFailuresPerHour,
   });
+  const admin = overrides.admin ?? createAdminClient({
+    socketPath: config.adminSocket,
+    timeoutMs: config.verifierTimeoutMs,
+    log,
+  });
   const deps = {
     config,
     log,
     stores,
+    admin,
     sessions: stores.sessions,
     limiter: stores.limiter,
     tokens: stores.tokens,
@@ -75,6 +82,7 @@ function createApp(config, overrides = {}) {
   require('./routes/start')(app, deps);
   require('./routes/logout')(app, deps);
   require('./routes/tokens')(app, deps);
+  require('./routes/admin')(app, deps);
 
   app.use((req, res) => res.status(404).type('text').send('Not found'));
   // eslint-disable-next-line no-unused-vars
@@ -101,6 +109,14 @@ if (require.main === module) {
     console.log(`  verifier       ${config.verifierSocket}`);
     console.log(`  store          ${app.locals.deps.stores.kind}`);
     if (!config.cookieSecure) console.warn('  WARNING: COOKIE_SECURE=false -- dev only');
+    if (config.adminDevices.length) console.log(`  admin devices  ${config.adminDevices.join(', ')}`);
+    const fs = require('node:fs');
+    if (!fs.existsSync(config.verifierSocket)) {
+      console.warn(`  WARNING: verifier socket ${config.verifierSocket} does not exist -- every login will fail until the verifier runs (make run-verifier)`);
+    }
+    if (config.adminDevices.length && !fs.existsSync(config.adminSocket)) {
+      console.warn(`  WARNING: admin socket ${config.adminSocket} does not exist -- /admin will not work (make run-admin)`);
+    }
     if (app.locals.deps.stores.kind === 'memory') {
       console.warn('  WARNING: in-memory store -- a restart signs everyone out and drops device tokens');
     }

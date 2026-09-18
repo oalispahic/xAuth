@@ -27,6 +27,8 @@ function testConfig(overrides = {}) {
     tokenHeader: 'x-xauth-token',
     tokenTtlSeconds: 86400,
     maxTokensPerDevice: 3,
+    adminSocket: '/nonexistent/admin.sock',
+    adminDevices: [],
     alertWebhookUrl: '',
     alertFailuresPerHour: 6,
     otpStepSeconds: 90,
@@ -54,6 +56,31 @@ function fakeVerifier({ now, stepSeconds, statuses }) {
   };
 }
 
+// In-process stand-in for the admin daemon. Starts with TEST (active) and
+// ZZZZ (revoked); `fail` makes every call error like an unreachable daemon.
+function fakeAdmin() {
+  const devices = [
+    { id: 'TEST', status: 'active', created: '2026-01-01 00:00:00', label: 'primary' },
+    { id: 'ZZZZ', status: 'revoked', created: '2026-01-02 00:00:00', label: 'lost' },
+  ];
+  let next = 0;
+  const find = (id) => devices.find((d) => d.id === id);
+  return {
+    devices,
+    fail: false,
+    async list() { return this.fail ? null : devices.map((d) => ({ ...d })); },
+    async add(label) {
+      if (this.fail) return null;
+      const id = `NEW${next++}`;
+      devices.push({ id, status: 'active', created: '2026-02-01 00:00:00', label });
+      return { id, key: 'ab'.repeat(64) };
+    },
+    async revoke(id) { if (this.fail) return 'error'; const d = find(id); if (!d) return 'no'; d.status = 'revoked'; return 'ok'; },
+    async activate(id) { if (this.fail) return 'error'; const d = find(id); if (!d) return 'no'; d.status = 'active'; return 'ok'; },
+    async relabel(id, label) { if (this.fail) return 'error'; const d = find(id); if (!d) return 'no'; d.label = label; return 'ok'; },
+  };
+}
+
 // Starts a real server on a random port. `clock.now` can be moved to cross
 // OTP windows without waiting.
 async function startApp(configOverrides = {}, { clock, log = quietLog, alerter } = {}) {
@@ -70,7 +97,8 @@ async function startApp(configOverrides = {}, { clock, log = quietLog, alerter }
     ...(clock ? { now } : {}),
   });
   const verifier = fakeVerifier({ now, stepSeconds: config.otpStepSeconds, statuses });
-  const app = createApp(config, { log, stores, verifier, ...(alerter ? { alerter } : {}) });
+  const admin = fakeAdmin();
+  const app = createApp(config, { log, stores, verifier, admin, ...(alerter ? { alerter } : {}) });
   const server = await new Promise((resolve) => {
     const s = app.listen(0, '127.0.0.1', () => resolve(s));
   });
@@ -81,6 +109,7 @@ async function startApp(configOverrides = {}, { clock, log = quietLog, alerter }
     config,
     statuses,
     verifier,
+    admin,
     deps: app.locals.deps,
     async close() {
       await app.locals.close();
@@ -93,6 +122,9 @@ async function startApp(configOverrides = {}, { clock, log = quietLog, alerter }
         headers: form ? { 'content-type': 'application/x-www-form-urlencoded', ...headers } : headers,
         body: form ? new URLSearchParams(form).toString() : undefined,
       });
+    },
+    async signIn() {
+      return sessionCookie(await this.login({ device_id: 'TEST', code: '12345678' }));
     },
     login(form, headers = {}) {
       return this.request('/otp', { method: 'POST', form, headers: { origin: AUTH, ...headers } });

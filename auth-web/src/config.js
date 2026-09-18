@@ -60,6 +60,11 @@ function load() {
     // device's sessions and tokens keep working.
     statusCacheSeconds: int('STATUS_CACHE_SECONDS', 5),
 
+    // The admin daemon's socket (keystore writes) and the devices allowed to
+    // use the dashboard. Empty ADMIN_DEVICES disables /admin entirely.
+    adminSocket: str('ADMIN_SOCKET', path.join(repoRoot, 'build', 'admin.sock')),
+    adminDevices: list('ADMIN_DEVICES').map((d) => d.toUpperCase()),
+
     // Empty means in-memory stores: fine for tests and the harness, but a
     // restart signs everyone out and drops every device token.
     redisUrl: str('REDIS_URL', ''),

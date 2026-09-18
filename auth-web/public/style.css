@@ -62,11 +62,17 @@ body {
 
 .shell { width: 100%; max-width: 24rem; display: grid; gap: 1rem; }
 .shell-wide { max-width: 34rem; }
+.shell-wider { max-width: 52rem; }
+.nav { display: flex; gap: 0.25rem; margin-left: auto; }
+.nav a { padding: 0.3rem 0.65rem; border-radius: 999px; color: var(--muted); text-decoration: none; font-size: 0.9rem; font-weight: 600; }
+.nav a[aria-current] { color: var(--text); background: var(--accent-soft); }
+.nav a:hover { color: var(--text); }
 
 .brand {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0 0.25rem;
   gap: 0.45rem;
   margin-bottom: 0.25rem;
   color: var(--accent);
@@ -226,6 +232,22 @@ input:focus-visible {
 .new-token .hint { margin: 0.6rem 0 0; }
 .new-token-row { display: flex; gap: 0.5rem; }
 .token-value { flex: 1; min-width: 0; font-family: var(--mono); font-size: 0.85rem; }
+
+/* Admin ------------------------------------------------------------------- */
+
+.table-wrap { overflow-x: auto; margin: 0 -0.25rem; }
+.devices { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+.devices th { text-align: left; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--border); }
+.devices td { padding: 0.55rem 0.5rem; border-bottom: 1px solid var(--border); vertical-align: middle; white-space: nowrap; }
+.devices tr.is-revoked td { color: var(--muted); }
+.devices .actions { text-align: right; }
+.label-form { display: flex; gap: 0.4rem; }
+.label-form input { padding: 0.35rem 0.5rem; font-size: 0.9rem; min-width: 11rem; }
+.tag { display: inline-block; margin-left: 0.3rem; padding: 0.05rem 0.45rem; border-radius: 999px; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--accent); background: var(--accent-soft); }
+.dot { display: inline-block; width: 0.5rem; height: 0.5rem; margin-right: 0.4rem; border-radius: 50%; background: var(--muted); vertical-align: 0.05em; }
+.dot-active { background: var(--ok); }
+.header-value { width: 100%; font-family: var(--mono); font-size: 0.8rem; line-height: 1.4; resize: vertical; white-space: pre; }
+@media (max-width: 40rem) { .shell-wider .card { padding: 1rem; } }
 
 /* Utilities --------------------------------------------------------------- */
 

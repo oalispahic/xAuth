@@ -34,10 +34,10 @@
     });
   }
 
-  // New token: select on focus, and a copy button.
+  // New token or firmware header: select on focus, and a copy button.
   for (const field of document.querySelectorAll('.token-value')) {
     field.addEventListener('focus', () => field.select());
-    const button = document.querySelector('[data-copy]');
+    const button = field.closest('.new-token')?.querySelector('[data-copy]');
     if (!button || !navigator.clipboard) continue;
     button.hidden = false;
     button.addEventListener('click', async () => {
