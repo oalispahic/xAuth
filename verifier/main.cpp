@@ -284,7 +284,12 @@ int main(int argc, char** argv) {
             return usage();
         }
     }
-    if (path.empty() || path.size() >= sizeof socket_path) return usage();
+    if (path.empty()) return usage();
+    if (path.size() >= sizeof socket_path) {
+        std::cerr << "verifier: socket path is " << path.size() << " bytes; Unix sockets allow at most "
+                  << sizeof socket_path - 1 << " -- use a shorter path" << std::endl;
+        return 2;
+    }
     std::strncpy(socket_path, path.c_str(), sizeof socket_path - 1);
 
     harden_process();
