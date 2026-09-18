@@ -5,6 +5,7 @@
 #include "totp.hpp"
 
 #include <Wire.h>
+#include <string.h>
 
 static Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
@@ -12,20 +13,40 @@ bool display_begin() {
     return display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDR);
 }
 
-void display_show_code(const char* code) {
-    // Split into two groups of four. Eight digits at text size 2 is 96 px of a
-    // 128 px panel, so the space fits and the code stays readable at arm's
-    // length while you type it.
-    char left[5]  = { code[0], code[1], code[2], code[3], '\0' };
-    char right[5] = { code[4], code[5], code[6], code[7], '\0' };
+void display_show_code(const char* code, const char* id, uint32_t seconds_left, uint32_t step_seconds) {
+    // Two groups of four at text size 2: 9 characters x 12 px = 108 px of the
+    // 128 px panel, centred, readable at arm's length while you type it.
+    char grouped[10] = { code[0], code[1], code[2], code[3], ' ',
+                         code[4], code[5], code[6], code[7], '\0' };
 
     display.clearDisplay();
-    display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
-    display.setCursor(0, 8);
-    display.print(left);
-    display.print(" ");
-    display.print(right);
+    display.setTextSize(2);
+    display.setCursor((SCREEN_WIDTH - 9 * 12) / 2, 0);
+    display.print(grouped);
+
+    // Bottom row: ID on the left, time-left bar on the right.
+    display.setTextSize(1);
+    display.setCursor(0, SCREEN_HEIGHT - 8);
+    display.print(id);
+
+    const int bar_x = 64, bar_w = SCREEN_WIDTH - bar_x, bar_y = SCREEN_HEIGHT - 6, bar_h = 4;
+    display.drawRect(bar_x, bar_y, bar_w, bar_h, SSD1306_WHITE);
+    int fill = (int)((uint64_t)(bar_w - 2) * seconds_left / step_seconds);
+    display.fillRect(bar_x + 1, bar_y + 1, fill, bar_h - 2, SSD1306_WHITE);
+    display.display();
+}
+
+void display_status(const char* text, const char* id) {
+    display.clearDisplay();
+    display.setTextColor(SSD1306_WHITE);
+    display.setTextSize(2);
+    int w = (int)strlen(text) * 12;
+    display.setCursor(w < SCREEN_WIDTH ? (SCREEN_WIDTH - w) / 2 : 0, 0);
+    display.print(text);
+    display.setTextSize(1);
+    display.setCursor(0, SCREEN_HEIGHT - 8);
+    display.print(id);
     display.display();
 }
 

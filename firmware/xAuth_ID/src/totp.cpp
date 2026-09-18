@@ -8,6 +8,11 @@
 #include <Arduino.h>
 #include <string.h>
 #include <mbedtls/md.h>   // BearSSL equivalent on the ESP32-C3
+#include <mbedtls/platform_util.h>
+
+#ifndef DEVICE_ID
+#error "securekey.hpp has no DEVICE_ID -- regenerate it with: provision add --firmware-header include/securekey.hpp"
+#endif
 
 // Module-private on purpose: the key never leaves this translation unit.
 static const char* secretKey = SECURE_KEY;
@@ -57,11 +62,22 @@ uint32_t totp(const char* key, time_t now, int step_seconds, int digits) {
     // Čišćenje memorije konteksta
     mbedtls_md_free(&ctx);
 
-    return dynamic_truncate(hmacResult, digits);
+    uint32_t code = dynamic_truncate(hmacResult, digits);
+    // The HMAC is key-derived; don't leave it on the stack.
+    mbedtls_platform_zeroize(hmacResult, sizeof hmacResult);
+    return code;
 }
 
 uint32_t otp_now(time_t now) {
     return totp(secretKey, now);
+}
+
+const char* device_id() {
+    return DEVICE_ID;
+}
+
+uint32_t otp_seconds_left(uint32_t now) {
+    return OTP_STEP_SECONDS - (now % OTP_STEP_SECONDS);
 }
 
 void format_code(uint32_t code, char* out) {

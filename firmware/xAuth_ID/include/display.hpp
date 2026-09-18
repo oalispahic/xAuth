@@ -13,10 +13,15 @@
 // shared with the DS3231, so the caller owns it.
 bool display_begin();
 
-// Shows an 8-digit code split into two groups, the way it is read aloud.
-void display_show_code(const char* code);
+// The normal screen: the 8-digit code in two groups of four, the device ID,
+// and a bar that empties as the code's 90-second window runs out.
+void display_show_code(const char* code, const char* id, uint32_t seconds_left, uint32_t step_seconds);
 
-// Single line of status text, for states where there is no code to show.
+// A status screen for when there is no code to show (e.g. "SET TIME"), with
+// the device ID underneath so the keychain can still be identified.
+void display_status(const char* text, const char* id);
+
+// Single line of status text.
 void display_message(const char* text);
 
 // Bench demos: wiring, I2C address and text metrics on a new panel. Nothing
