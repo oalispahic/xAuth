@@ -18,6 +18,12 @@ touched) and its own auth-web, then attacks them:
 auth-web listens on 127.0.0.1:3100, where the harness nginx expects it, so
 stop `npm run dev` first. Uses Redis from dev/xauth.env when reachable,
 in-memory stores otherwise.
+
+    python3 tests/adversarial.py --stack
+
+attacks the hardened containers from deploy/docker-compose.yml instead, already
+running with a throwaway keystore -- see deploy/README.md. The verifier timing
+check is skipped there: the daemon's socket lives inside a Docker volume.
 """
 from __future__ import annotations
 
@@ -149,24 +155,41 @@ def fresh_window(min_left=25):
 # ---- the suite -----------------------------------------------------------------
 
 def main() -> int:
+    stack = "--stack" in sys.argv[1:]
+    if stack:
+        return run(stack=True)
     if port_open(PORT):
         print(f"Something is already listening on {PORT}. Stop `npm run dev` first.")
         return 2
+    return run(stack=False)
+
+
+def run(stack: bool) -> int:
     for tool in ("verifier", "provision"):
         if not os.path.exists(os.path.join(BUILD, tool)):
             print("Run `make` first.")
             return 2
 
     tmp = tempfile.mkdtemp(prefix="xauth-adv-")
-    db = os.path.join(tmp, "auth")
     sock = os.path.join(tmp, "v.sock")
-    with open(os.path.join(ROOT, "db", "schema.sql")) as f:
-        sqlite3.connect(db).executescript(f.read())
-    env_db = {"XAUTH_DB": db, "PATH": os.environ.get("PATH", "")}
+    env_db = {"PATH": os.environ.get("PATH", "")}
+    if stack:
+        db = os.path.join(os.environ["XAUTH_KEYSTORE_DIR"], "auth")
+        compose = ["docker", "compose", "-f", os.path.join(ROOT, "deploy", "docker-compose.yml"),
+                   "run", "--rm", "-T", "provision"]
 
-    def provision(*args):
-        return subprocess.run([os.path.join(BUILD, "provision"), *args], env=env_db,
-                              check=True, capture_output=True, text=True).stdout.strip()
+        def provision(*args):
+            return subprocess.run([*compose, *args], check=True, capture_output=True,
+                                  text=True).stdout.strip().splitlines()[-1]
+    else:
+        db = os.path.join(tmp, "auth")
+        with open(os.path.join(ROOT, "db", "schema.sql")) as f:
+            sqlite3.connect(db).executescript(f.read())
+        env_db["XAUTH_DB"] = db
+
+        def provision(*args):
+            return subprocess.run([os.path.join(BUILD, "provision"), *args], env=env_db,
+                                  check=True, capture_output=True, text=True).stdout.strip()
 
     devices = [provision("add", "--label", f"adv{i}") for i in range(6)]
     con = sqlite3.connect(db)
@@ -176,9 +199,7 @@ def main() -> int:
     # sharing a device would let one test pass on another's spent budget.
     brute, replay, race, older, revokee, spare = devices
 
-    verifier = subprocess.Popen([os.path.join(BUILD, "verifier"), "--socket", sock], env=env_db,
-                                stderr=subprocess.DEVNULL)
-    use_redis = port_open(6379)
+    use_redis = stack or port_open(6379)
     web_env = {
         "PATH": os.environ.get("PATH", ""),
         "HOST": "127.0.0.1", "PORT": str(PORT),
@@ -187,27 +208,38 @@ def main() -> int:
         "VERIFIER_SOCKET": sock, "STATUS_CACHE_SECONDS": "1", "IP_ATTEMPTS_PER_MINUTE": "20",
         **({"REDIS_URL": "redis://127.0.0.1:6379"} if use_redis else {}),
     }
-    web = subprocess.Popen(["node", "src/server.js"], cwd=os.path.join(ROOT, "auth-web"), env=web_env,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    procs = []
+    if not stack:
+        procs.append(subprocess.Popen([os.path.join(BUILD, "verifier"), "--socket", sock], env=env_db,
+                                      stderr=subprocess.DEVNULL))
+        procs.append(subprocess.Popen(["node", "src/server.js"], cwd=os.path.join(ROOT, "auth-web"),
+                                      env=web_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
     try:
-        if not wait_for(lambda: os.path.exists(sock)) or not wait_for(lambda: port_open(PORT)):
-            print("verifier or auth-web did not start")
+        if not stack and not wait_for(lambda: os.path.exists(sock)):
+            print("verifier did not start")
             return 1
-        print(f"store: {'redis' if use_redis else 'memory'}   devices: {', '.join(devices)}")
+        if not wait_for(lambda: port_open(PORT)):
+            print("auth-web is not listening on", PORT)
+            return 1
+        print(f"target: {'hardened stack' if stack else 'local processes'}   "
+              f"store: {'redis' if use_redis else 'memory'}   devices: {', '.join(devices)}")
 
         # -- 1. timing -------------------------------------------------------------
         section("Timing (verifier socket, unknown ID vs known ID + wrong code)")
         known, unknown = [], []
-        for i in range(6000):
+        if stack:
+            print("  [SKIP] socket is inside the stack's volume; same binary as the local run")
+        for i in range(0 if stack else 6000):
             which = i % 2
             line = f"VERIFY {spare if which else 'ZZZZ'} 00000001\n"
             t = time.perf_counter_ns()
             ask_socket(sock, line)
             (known if which else unknown).append(time.perf_counter_ns() - t)
-        mk, mu = statistics.median(known), statistics.median(unknown)
-        diff = abs(mk - mu) / min(mk, mu)
-        check("no visible timing difference", diff < 0.10,
-              f"known {mk / 1000:.1f}us, unknown {mu / 1000:.1f}us, diff {diff:.1%}")
+        if not stack:
+            mk, mu = statistics.median(known), statistics.median(unknown)
+            diff = abs(mk - mu) / min(mk, mu)
+            check("no visible timing difference", diff < 0.10,
+                  f"known {mk / 1000:.1f}us, unknown {mu / 1000:.1f}us, diff {diff:.1%}")
 
         # -- 2. brute force --------------------------------------------------------
         section("Brute force")
@@ -343,10 +375,10 @@ def main() -> int:
             check("unknown hosts are dropped",
                   _dropped(lambda: req("GET", "/", port=8080, host_header="evil.example")))
     finally:
-        web.terminate()
-        verifier.terminate()
-        web.wait(5)
-        verifier.wait(5)
+        for p in procs:
+            p.terminate()
+        for p in procs:
+            p.wait(5)
 
     print("\nALL PASS" if not failures else f"\n{len(failures)} FAILED:\n  " + "\n  ".join(failures))
     return 1 if failures else 0
