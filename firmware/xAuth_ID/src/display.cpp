@@ -13,6 +13,31 @@ bool display_begin() {
     return display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDR);
 }
 
+// Bottom-right "hamburger": four stacked lines when the code has just
+// changed, then three, two, one as the 90 s window runs out. At one line the
+// code is about to change -- wait for the next one rather than typing this
+// one, so the screen says so.
+static void draw_time_left(uint32_t seconds_left, uint32_t step_seconds) {
+    if (seconds_left > step_seconds) seconds_left = step_seconds;
+    int lines = (int)((seconds_left * 4 + step_seconds - 1) / step_seconds);   // ceil, 0..4
+    if (lines < 1) lines = 1;
+
+    const int w = 18, thick = 2, gap = 2;
+    const int x = SCREEN_WIDTH - w;
+    const int bottom = SCREEN_HEIGHT - 1;
+    // Lines disappear from the top down, so the icon shrinks toward the
+    // baseline like a stack being used up.
+    for (int i = 0; i < lines; i++) {
+        int y = bottom - thick + 1 - i * (thick + gap);
+        display.fillRect(x, y, w, thick, SSD1306_WHITE);
+    }
+    if (lines == 1) {
+        display.setTextSize(1);
+        display.setCursor(x - 5 * 6 - 4, SCREEN_HEIGHT - 8);   // "wait" is 4 chars + space
+        display.print("wait");
+    }
+}
+
 void display_show_code(const char* code, const char* id, uint32_t seconds_left, uint32_t step_seconds) {
     // Two groups of four at text size 2: 9 characters x 12 px = 108 px of the
     // 128 px panel, centred, readable at arm's length while you type it.
@@ -25,15 +50,11 @@ void display_show_code(const char* code, const char* id, uint32_t seconds_left, 
     display.setCursor((SCREEN_WIDTH - 9 * 12) / 2, 0);
     display.print(grouped);
 
-    // Bottom row: ID on the left, time-left bar on the right.
+    // Bottom row: ID on the left, time-left stack on the right.
     display.setTextSize(1);
     display.setCursor(0, SCREEN_HEIGHT - 8);
     display.print(id);
-
-    const int bar_x = 64, bar_w = SCREEN_WIDTH - bar_x, bar_y = SCREEN_HEIGHT - 6, bar_h = 4;
-    display.drawRect(bar_x, bar_y, bar_w, bar_h, SSD1306_WHITE);
-    int fill = (int)((uint64_t)(bar_w - 2) * seconds_left / step_seconds);
-    display.fillRect(bar_x + 1, bar_y + 1, fill, bar_h - 2, SSD1306_WHITE);
+    draw_time_left(seconds_left, step_seconds);
     display.display();
 }
 

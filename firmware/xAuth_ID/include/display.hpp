@@ -14,7 +14,8 @@
 bool display_begin();
 
 // The normal screen: the 8-digit code in two groups of four, the device ID,
-// and a bar that empties as the code's 90-second window runs out.
+// and a four-line stack that loses a line per quarter of the 90-second
+// window. One line left means: wait for the next code.
 void display_show_code(const char* code, const char* id, uint32_t seconds_left, uint32_t step_seconds);
 
 // A status screen for when there is no code to show (e.g. "SET TIME"), with
