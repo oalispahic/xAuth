@@ -1,0 +1,66 @@
+:root {
+  --bg: #f4f4f2;
+  --card: #ffffff;
+  --text: #1b1b1b;
+  --muted: #5f5f5b;
+  --border: #d6d6d1;
+  --accent: #1f5f4a;
+  --error: #a3261c;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141514;
+    --card: #1e201e;
+    --text: #ececea;
+    --muted: #a3a39e;
+    --border: #3a3c39;
+    --accent: #6fc3a4;
+    --error: #f0857b;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.card {
+  width: 100%;
+  max-width: 22rem;
+  padding: 2rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+h1 { margin: 0 0 0.25rem; font-size: 1.4rem; }
+.hint { margin: 0 0 1.5rem; color: var(--muted); font-size: 0.95rem; }
+.error { margin: 0 0 1rem; color: var(--error); font-weight: 600; }
+form { display: grid; gap: 1rem; }
+label { display: grid; gap: 0.35rem; font-size: 0.9rem; font-weight: 600; }
+input {
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  font: 1.15rem/1.2 ui-monospace, "SF Mono", Menlo, monospace;
+  letter-spacing: 0.08em;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+button {
+  padding: 0.7rem;
+  font: inherit;
+  font-weight: 600;
+  color: var(--card);
+  background: var(--accent);
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}

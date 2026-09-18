@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mock app</title>
+  <style>
+    body { font: 16px/1.5 system-ui, sans-serif; max-width: 40rem; margin: 3rem auto; padding: 0 1rem; }
+    code { background: #8882; padding: 0.1rem 0.3rem; border-radius: 4px; word-break: break-all; }
+    button { font: inherit; padding: 0.4rem 0.8rem; }
+  </style>
+</head>
+<body>
+  <h1>Mock app on <span id="host"></span></h1>
+  <p>If this page is showing on <code>app.xauth.test</code>, the gate let you in.</p>
+  <p>You asked for <code id="url"></code></p>
+  <p>
+    Try another path, with a query string:
+    <a href="/photos/2026?album=summer&amp;sort=desc">/photos/2026?album=summer&amp;sort=desc</a>
+  </p>
+  <form method="post" action="http://auth.xauth.test:8080/logout">
+    <button type="submit">Sign out</button>
+  </form>
+  <script>
+    // textContent, not innerHTML: the URL is attacker-controlled.
+    document.getElementById('host').textContent = location.host;
+    document.getElementById('url').textContent = location.href;
+  </script>
+</body>
+</html>

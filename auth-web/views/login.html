@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Sign in</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <main class="card">
+    <h1>Sign in</h1>
+    <p class="hint">Enter the ID printed on your keychain and the code it shows.</p>
+    {{{error}}}
+    <form method="post" action="/otp" autocomplete="off">
+      <input type="hidden" name="redirect" value="{{redirect}}">
+      <label>
+        Device ID
+        <input name="device_id" required maxlength="16" autocapitalize="characters" spellcheck="false" autofocus>
+      </label>
+      <label>
+        Code
+        <input name="code" required maxlength="16" inputmode="numeric" autocomplete="one-time-code">
+      </label>
+      <button type="submit">Continue</button>
+    </form>
+  </main>
+</body>
+</html>

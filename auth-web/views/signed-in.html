@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Signed in</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <main class="card">
+    <h1>Signed in</h1>
+    <p class="hint">This browser is signed in with device <strong>{{device}}</strong>.</p>
+    <form method="post" action="/logout">
+      <button type="submit">Sign out</button>
+    </form>
+  </main>
+</body>
+</html>
