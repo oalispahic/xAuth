@@ -14,6 +14,8 @@ verifier daemon a yes/no question over a Unix socket and only ever gets back
 | `POST /tokens` | Creates a device token for the signed-in device. Shown once. |
 | `POST /tokens/revoke` | Revokes one of the signed-in device's tokens. |
 | `POST /logout` | Ends the session. |
+| `GET /admin` | Device dashboard, for sessions whose device is in `ADMIN_DEVICES`. 404 for everyone else. |
+| `POST /admin/devices`, `/admin/devices/{revoke,activate,label}` | Writes, through the admin daemon's socket. |
 | `GET /healthz` | Liveness. |
 
 ## Stores
@@ -47,6 +49,8 @@ Environment variables, all in `src/config.js`. `AUTH_ORIGIN` and
 | `AUTH_ORIGIN` | required | Public origin of the login site. |
 | `ALLOWED_HOSTS` | required | Hosts that may be redirected back to, exact match, with port if any. |
 | `VERIFIER_SOCKET` | `build/verifier.sock` | The verifier daemon's socket. |
+| `ADMIN_SOCKET` | `build/admin.sock` | The admin daemon's socket. |
+| `ADMIN_DEVICES` | none | Device IDs allowed on `/admin`. Empty disables it. |
 | `REDIS_URL` | memory | e.g. `redis://redis:6379`. |
 | `COOKIE_DOMAIN` | host-only | Parent domain shared by the auth site and the apps. |
 | `COOKIE_SECURE` | `true` | `false` is refused with an https `AUTH_ORIGIN`. |

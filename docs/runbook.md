@@ -10,6 +10,15 @@ KS=/srv/xauth/keystore/auth
 
 ## Provision a new keychain
 
+**From the dashboard:** sign in with an admin keychain, open **Devices**
+(`https://auth.example.com/admin`), enter a label, **Create device**. The page
+shows the firmware header once: copy it into
+`firmware/xAuth_ID/include/securekey.hpp` on the machine you flash from, then
+continue from step 2 below. To make the new keychain an admin too, add its ID
+to `ADMIN_DEVICES` in `deploy/xauth.env` and `$C up -d auth-web`.
+
+**From the shell** (no admin keychain at hand, or the dashboard is down):
+
 1. On the machine you flash from (it needs PlatformIO and the repo), create
    the device **and** its firmware header in one step, against the real
    keystore. The easiest way is to run it on the server and copy the header
@@ -35,6 +44,8 @@ KS=/srv/xauth/keystore/auth
 6. Sign in once at the auth site to prove it.
 
 ## A keychain is lost or stolen
+
+Dashboard: **Devices → Revoke**. Or from the shell:
 
 ```sh
 $C run --rm provision revoke 7Q5V
@@ -76,6 +87,18 @@ treat the keychain as suspect.
    regenerating: `deploy/seccomp/generate.sh`.
 4. Are you rate-limited? Two attempts per 90 s window per device. Wait for
    the next code.
+
+## Locked out of the dashboard
+
+The last active admin device cannot be revoked from the dashboard, but a
+lost admin keychain still leaves you without one. SSH in:
+
+```sh
+$C run --rm provision revoke <lost>
+$C run --rm provision add --label "new admin" --firmware-header ...   # as above
+# put the new ID in ADMIN_DEVICES in deploy/xauth.env
+$C up -d auth-web
+```
 
 ## Backups
 

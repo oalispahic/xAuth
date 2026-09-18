@@ -61,6 +61,9 @@ body {
 /* Layout ------------------------------------------------------------------ */
 
 .shell { width: 100%; max-width: 24rem; display: grid; gap: 1rem; }
+/* Grid items default to min-width:auto, which lets a wide table push the
+   column open instead of scrolling inside .table-wrap. */
+.shell > * { min-width: 0; }
 .shell-wide { max-width: 34rem; }
 .shell-wider { max-width: 52rem; }
 .nav { display: flex; gap: 0.25rem; margin-left: auto; }
